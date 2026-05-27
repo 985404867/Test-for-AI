@@ -61,6 +61,7 @@ OPENAI_MAX_TOKENS=8192
 AUTO_CONTINUE_ENABLED=true
 AUTO_CONTINUE_MAX_ROUNDS=4
 WEB_SEARCH_ENABLED=true
+WEB_SEARCH_PROVIDER=baidu
 WEB_SEARCH_FETCH_PAGES=true
 ```
 
@@ -106,6 +107,8 @@ python main.py gui
 普通对话和联网搜索回答会流式输出；如果回答仍然偏短，可以调大 `.env` 里的
 `OPENAI_MAX_TOKENS`，例如 `8192` 或服务商允许的更大值。留空则不主动传输出长度限制。
 如果模型仍然因为服务商单次上限被截断，`AUTO_CONTINUE_ENABLED=true` 会自动续写并拼接结果。
+代理关闭后建议使用 `WEB_SEARCH_PROVIDER=baidu`；如果在可访问 DuckDuckGo 的网络里，
+可以改为 `duckduckgo` 或 `auto`。
 
 联网搜索默认会搜索网页，并尽量抓取前几个结果页的正文摘录。部分网站会阻止程序抓取，
 这时回答会只能基于搜索摘要。

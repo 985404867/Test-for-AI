@@ -17,6 +17,7 @@ def test_settings_can_be_constructed() -> None:
         retriever_k=4,
         knowledge_path=Path("data/knowledge.md"),
         web_search_enabled=False,
+        web_search_provider="baidu",
         web_search_max_results=5,
         web_search_timeout=8,
         web_search_fetch_pages=True,

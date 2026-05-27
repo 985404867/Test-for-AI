@@ -7,7 +7,7 @@ import json
 import re
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, unquote, urlencode, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from langchain_starter.config import Settings
@@ -97,6 +97,64 @@ def _extract_duckduckgo_html_results(page_html: str) -> list[SearchResult]:
     return results
 
 
+def _decode_baidu_url(url: str) -> str:
+    url = html.unescape(url)
+    if url.startswith("//"):
+        return f"https:{url}"
+    if url.startswith("/"):
+        return urljoin("https://www.baidu.com", url)
+    return url
+
+
+def _extract_baidu_results(page_html: str) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    blocks = re.findall(
+        r'<div[^>]+(?:class="[^"]*\bresult\b[^"]*"|tpl="[^"]+")[\s\S]*?</div>\s*</div>',
+        page_html,
+        flags=re.IGNORECASE,
+    )
+    if not blocks:
+        blocks = re.findall(
+            r'<h3[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="page"|</body>)',
+            page_html,
+            flags=re.IGNORECASE,
+        )
+
+    for block in blocks:
+        title_match = re.search(
+            r'<h3[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>[\s\S]*?</h3>',
+            block,
+            flags=re.IGNORECASE,
+        )
+        if not title_match:
+            title_match = re.search(
+                r'<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>',
+                block,
+                flags=re.IGNORECASE,
+            )
+        if not title_match:
+            continue
+
+        url = _decode_baidu_url(title_match.group(1))
+        title = _clean_text(title_match.group(2))
+        snippet = _clean_text(re.sub(r"<h3[\s\S]*?</h3>", " ", block, flags=re.IGNORECASE))
+        if len(snippet) > 260:
+            snippet = snippet[:260].rstrip() + "..."
+        if title and url:
+            results.append(SearchResult(title=title, snippet=snippet or title, url=url))
+
+    return results
+
+
+def _search_baidu_html(query: str, settings: Settings) -> list[SearchResult]:
+    params = urlencode({"wd": query, "rn": settings.web_search_max_results})
+    page_html = _request_text(
+        f"https://www.baidu.com/s?{params}",
+        settings.web_search_timeout,
+    )
+    return _extract_baidu_results(page_html)
+
+
 def _search_duckduckgo_html(query: str, settings: Settings) -> list[SearchResult]:
     params = urlencode({"q": query})
     page_html = _request_text(
@@ -171,16 +229,30 @@ def _fetch_page_text(result: SearchResult, settings: Settings) -> SearchResult:
 def search_web(query: str, settings: Settings) -> list[SearchResult]:
     """Search the web and return a small list of text results."""
 
-    try:
-        results = _search_duckduckgo_html(query, settings)
-    except (HTTPError, URLError, TimeoutError, ValueError):
-        results = []
+    provider = settings.web_search_provider
+    if provider not in {"auto", "baidu", "duckduckgo"}:
+        provider = "baidu"
 
-    if not results:
+    search_errors: list[str] = []
+    searchers = []
+    if provider in {"auto", "baidu"}:
+        searchers.append(("baidu", _search_baidu_html))
+    if provider in {"auto", "duckduckgo"}:
+        searchers.append(("duckduckgo-html", _search_duckduckgo_html))
+        searchers.append(("duckduckgo-api", _search_duckduckgo_instant))
+
+    results: list[SearchResult] = []
+    for name, searcher in searchers:
         try:
-            results = _search_duckduckgo_instant(query, settings)
+            results = searcher(query, settings)
         except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"联网搜索失败：{exc}") from exc
+            search_errors.append(f"{name}: {exc}")
+            continue
+        if results:
+            break
+
+    if not results and search_errors:
+        raise RuntimeError("联网搜索失败：" + "；".join(search_errors))
 
     deduped: list[SearchResult] = []
     seen_urls: set[str] = set()
