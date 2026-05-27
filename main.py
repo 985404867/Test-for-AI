@@ -6,6 +6,7 @@
     python main.py rag "这个项目如何修改提示词？"
     python main.py interactive
     python main.py gui
+    python main.py web
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from langchain_starter.chat import (
 from langchain_starter.config import load_settings
 from langchain_starter.gui import run_chat_window
 from langchain_starter.rag import ask_with_rag
+from langchain_starter.web_server import run_web_app
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("interactive", help="终端交互模式，可连续提问")
     subparsers.add_parser("gui", help="打开桌面对话框，可连续对话")
+    web_parser = subparsers.add_parser("web", help="启动 React Web 对话界面")
+    web_parser.add_argument("--host", default="127.0.0.1", help="Web 服务监听地址")
+    web_parser.add_argument("--port", type=int, default=8000, help="Web 服务端口")
     return parser
 
 
@@ -121,6 +126,8 @@ def main() -> None:
         run_interactive()
     elif args.command == "gui":
         run_chat_window(settings)
+    elif args.command == "web":
+        run_web_app(settings, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

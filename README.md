@@ -19,6 +19,8 @@ langchain_starter/
 │   ├── context.py               # 上下文文档加载与切分
 │   ├── rag.py                   # RAG 检索问答链
 │   ├── web_search.py            # 联网搜索工具
+│   ├── web_server.py            # React Web 对话界面服务
+│   ├── static/                  # React 前端页面
 │   └── chat.py                  # 普通聊天链
 └── tests/
     └── test_config.py           # 一个很小的配置测试示例
@@ -103,6 +105,14 @@ python main.py interactive
 python main.py gui
 ```
 
+React Web 对话界面：
+
+```bash
+python main.py web
+```
+
+启动后访问终端里显示的本地地址，例如 `http://127.0.0.1:8000`。
+
 在桌面对话框里，需要实时信息时勾选“联网搜索”。
 普通对话和联网搜索回答会流式输出；如果回答仍然偏短，可以调大 `.env` 里的
 `OPENAI_MAX_TOKENS`，例如 `8192` 或服务商允许的更大值。留空则不主动传输出长度限制。
@@ -122,4 +132,5 @@ python main.py gui
 - 改知识库内容：`data/knowledge.md`
 - 改 RAG 流程：`src/langchain_starter/rag.py`
 - 改联网搜索逻辑：`src/langchain_starter/web_search.py`
+- 改 React Web 界面：`src/langchain_starter/static/`
 - 改入口逻辑：`main.py`
