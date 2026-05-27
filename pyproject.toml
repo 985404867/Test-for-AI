@@ -1,0 +1,10 @@
+[project]
+name = "langchain-starter"
+version = "0.1.0"
+description = "A small, decomposable LangChain project for PyCharm."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
