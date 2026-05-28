@@ -15,6 +15,9 @@ langchain_starter/
 ├── src/langchain_starter/
 │   ├── config.py                # 所有可修改配置集中在这里读取
 │   ├── llm.py                   # 创建大模型和 Embedding
+│   ├── tools.py                 # LangChain Tools：联网搜索、本地知识库检索
+│   ├── agent.py                 # Tool Calling Agent
+│   ├── storage.py               # SQLite 会话和聊天记录存储
 │   ├── prompts.py               # 提示词模板集中管理
 │   ├── context.py               # 上下文文档加载与切分
 │   ├── rag.py                   # RAG 检索问答链
@@ -63,7 +66,7 @@ OPENAI_MAX_TOKENS=8192
 AUTO_CONTINUE_ENABLED=true
 AUTO_CONTINUE_MAX_ROUNDS=4
 WEB_SEARCH_ENABLED=true
-WEB_SEARCH_PROVIDER=baidu
+WEB_SEARCH_PROVIDER=auto
 WEB_SEARCH_FETCH_PAGES=true
 ```
 
@@ -93,6 +96,18 @@ python main.py rag "这个项目的配置应该从哪里改？"
 python main.py interactive
 ```
 
+Tool Calling Agent：
+
+```bash
+python main.py agent "这个项目如何运行？"
+python main.py agent-interactive
+```
+
+Agent 会按需调用两个工具：
+
+- `web_search`：联网搜索实时或外部信息
+- `local_knowledge_search`：检索 `data/knowledge.md` 本地知识库
+
 在交互模式里使用联网搜索：
 
 ```text
@@ -112,16 +127,27 @@ python main.py web
 ```
 
 启动后访问终端里显示的本地地址，例如 `http://127.0.0.1:8000`。
+Web 界面支持 `Agent 模式`，开启后模型会按需自动调用：
+
+- `web_search`：联网搜索实时或外部信息
+- `local_knowledge_search`：检索本地知识库
+
+工具调用过程会以卡片形式显示在聊天历史中，方便观察 Agent 的决策过程。
+Web 和桌面 GUI 会把会话历史保存到 SQLite：`data/conversations.sqlite3`。
+Web 界面支持切换历史会话和新建会话；刷新页面后会自动恢复当前浏览器会话。
+桌面 GUI 启动后会自动恢复最近一次会话，点击“新对话”可以开始新的上下文。
+工具调用和系统运行日志会写入：`data/logs/app.log`。
 
 在桌面对话框里，需要实时信息时勾选“联网搜索”。
 普通对话和联网搜索回答会流式输出；如果回答仍然偏短，可以调大 `.env` 里的
 `OPENAI_MAX_TOKENS`，例如 `8192` 或服务商允许的更大值。留空则不主动传输出长度限制。
 如果模型仍然因为服务商单次上限被截断，`AUTO_CONTINUE_ENABLED=true` 会自动续写并拼接结果。
-代理关闭后建议使用 `WEB_SEARCH_PROVIDER=baidu`；如果在可访问 DuckDuckGo 的网络里，
-可以改为 `duckduckgo` 或 `auto`。
+代理关闭后建议使用 `WEB_SEARCH_PROVIDER=auto`，会按百度、搜狗、Bing、DuckDuckGo 的顺序回退。
+如果你想固定搜索源，可以改为 `baidu`、`sogou`、`bing` 或 `duckduckgo`。
 
 联网搜索默认会搜索网页，并尽量抓取前几个结果页的正文摘录。部分网站会阻止程序抓取，
 这时回答会只能基于搜索摘要。
+RAG 会缓存 FAISS 向量库到 `data/faiss_cache/`；当 `data/knowledge.md` 或 embedding 配置变化时会自动重建。
 
 ## 你最常改的地方
 
@@ -132,5 +158,7 @@ python main.py web
 - 改知识库内容：`data/knowledge.md`
 - 改 RAG 流程：`src/langchain_starter/rag.py`
 - 改联网搜索逻辑：`src/langchain_starter/web_search.py`
+- 改 Agent 工具：`src/langchain_starter/tools.py`
+- 改 Agent 流程：`src/langchain_starter/agent.py`
 - 改 React Web 界面：`src/langchain_starter/static/`
 - 改入口逻辑：`main.py`

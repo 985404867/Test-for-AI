@@ -107,6 +107,9 @@ def _decode_baidu_url(url: str) -> str:
 
 
 def _extract_baidu_results(page_html: str) -> list[SearchResult]:
+    if "百度安全验证" in page_html or "wappass.baidu.com" in page_html:
+        return []
+
     results: list[SearchResult] = []
     blocks = re.findall(
         r'<div[^>]+(?:class="[^"]*\bresult\b[^"]*"|tpl="[^"]+")[\s\S]*?</div>\s*</div>',
@@ -153,6 +156,98 @@ def _search_baidu_html(query: str, settings: Settings) -> list[SearchResult]:
         settings.web_search_timeout,
     )
     return _extract_baidu_results(page_html)
+
+
+def _extract_sogou_results(page_html: str) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    blocks = re.findall(
+        r'<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"[\s\S]*?(?=<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"|<div id="pagebar_container"|</body>)',
+        page_html,
+        flags=re.IGNORECASE,
+    )
+    if not blocks:
+        blocks = re.findall(
+            r'<h3[^>]*>[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="pagebar_container"|</body>)',
+            page_html,
+            flags=re.IGNORECASE,
+        )
+
+    for block in blocks:
+        title_match = re.search(
+            r'<h3[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>[\s\S]*?</h3>',
+            block,
+            flags=re.IGNORECASE,
+        )
+        if not title_match:
+            title_match = re.search(
+                r'<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>',
+                block,
+                flags=re.IGNORECASE,
+            )
+        if not title_match:
+            continue
+
+        url = html.unescape(title_match.group(1))
+        if url.startswith("//"):
+            url = f"https:{url}"
+        elif url.startswith("/"):
+            url = urljoin("https://www.sogou.com", url)
+
+        title = _clean_text(title_match.group(2))
+        snippet_source = re.sub(r"<h3[\s\S]*?</h3>", " ", block, flags=re.IGNORECASE)
+        snippet = _clean_text(snippet_source)
+        if len(snippet) > 300:
+            snippet = snippet[:300].rstrip() + "..."
+        if title and url.startswith(("http://", "https://")) and "javascript:" not in url:
+            results.append(SearchResult(title=title, snippet=snippet or title, url=url))
+
+    return results
+
+
+def _search_sogou_html(query: str, settings: Settings) -> list[SearchResult]:
+    params = urlencode({"query": query})
+    page_html = _request_text(
+        f"https://www.sogou.com/web?{params}",
+        settings.web_search_timeout,
+    )
+    return _extract_sogou_results(page_html)
+
+
+def _extract_bing_results(page_html: str) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    blocks = re.findall(
+        r'<li[^>]+class="[^"]*b_algo[^"]*"[\s\S]*?</li>',
+        page_html,
+        flags=re.IGNORECASE,
+    )
+    for block in blocks:
+        title_match = re.search(
+            r'<h2[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>[\s\S]*?</h2>',
+            block,
+            flags=re.IGNORECASE,
+        )
+        if not title_match:
+            continue
+        snippet_match = re.search(
+            r'<p[^>]*>([\s\S]*?)</p>',
+            block,
+            flags=re.IGNORECASE,
+        )
+        url = html.unescape(title_match.group(1))
+        title = _clean_text(title_match.group(2))
+        snippet = _clean_text(snippet_match.group(1)) if snippet_match else title
+        if title and url:
+            results.append(SearchResult(title=title, snippet=snippet, url=url))
+    return results
+
+
+def _search_bing_html(query: str, settings: Settings) -> list[SearchResult]:
+    params = urlencode({"q": query, "setlang": "zh-CN"})
+    page_html = _request_text(
+        f"https://www.bing.com/search?{params}",
+        settings.web_search_timeout,
+    )
+    return _extract_bing_results(page_html)
 
 
 def _search_duckduckgo_html(query: str, settings: Settings) -> list[SearchResult]:
@@ -230,13 +325,17 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
     """Search the web and return a small list of text results."""
 
     provider = settings.web_search_provider
-    if provider not in {"auto", "baidu", "duckduckgo"}:
-        provider = "baidu"
+    if provider not in {"auto", "baidu", "sogou", "bing", "duckduckgo"}:
+        provider = "auto"
 
     search_errors: list[str] = []
     searchers = []
     if provider in {"auto", "baidu"}:
         searchers.append(("baidu", _search_baidu_html))
+    if provider in {"auto", "sogou"}:
+        searchers.append(("sogou", _search_sogou_html))
+    if provider in {"auto", "bing"}:
+        searchers.append(("bing", _search_bing_html))
     if provider in {"auto", "duckduckgo"}:
         searchers.append(("duckduckgo-html", _search_duckduckgo_html))
         searchers.append(("duckduckgo-api", _search_duckduckgo_instant))
@@ -248,11 +347,15 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
         except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             search_errors.append(f"{name}: {exc}")
             continue
+        if not results:
+            search_errors.append(f"{name}: 没有解析到搜索结果")
         if results:
             break
 
     if not results and search_errors:
         raise RuntimeError("联网搜索失败：" + "；".join(search_errors))
+    if not results:
+        raise RuntimeError("联网搜索失败：所有搜索源都没有返回可用结果。")
 
     deduped: list[SearchResult] = []
     seen_urls: set[str] = set()

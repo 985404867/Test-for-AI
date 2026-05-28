@@ -3,6 +3,9 @@
 __pycache__/
 *.pyc
 .env
+data/conversations.sqlite3
+data/faiss_cache/
+data/logs/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

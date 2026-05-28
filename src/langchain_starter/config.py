@@ -102,7 +102,7 @@ def load_settings() -> Settings:
         retriever_k=int(os.getenv("RETRIEVER_K", "4")),
         knowledge_path=Path(os.getenv("KNOWLEDGE_PATH", "data/knowledge.md")),
         web_search_enabled=_optional_bool(os.getenv("WEB_SEARCH_ENABLED"), True),
-        web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "baidu").strip().lower(),
+        web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "auto").strip().lower(),
         web_search_max_results=int(os.getenv("WEB_SEARCH_MAX_RESULTS", "5")),
         web_search_timeout=float(os.getenv("WEB_SEARCH_TIMEOUT", "8")),
         web_search_fetch_pages=_optional_bool(os.getenv("WEB_SEARCH_FETCH_PAGES"), True),

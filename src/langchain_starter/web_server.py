@@ -3,23 +3,27 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
+from langchain_starter.agent import ask_agent
 from langchain_starter.chat import (
     prepare_web_search_context,
     stream_conversation,
     stream_conversation_with_search_context,
 )
 from langchain_starter.config import Settings
+from langchain_starter.storage import ConversationStore
 
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
+logger = logging.getLogger(__name__)
 
 
 def _messages_from_payload(items: list[dict]) -> list[BaseMessage]:
@@ -58,6 +62,8 @@ def _choose_port(host: str, preferred_port: int) -> int:
 
 
 def create_handler(settings: Settings):
+    store = ConversationStore()
+
     class WebHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -90,6 +96,14 @@ def create_handler(settings: Settings):
             self.end_headers()
             self.wfile.write(content)
 
+        def _send_json(self, payload: dict, status: int = 200) -> None:
+            content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
             if parsed.path == "/api/config":
@@ -98,13 +112,22 @@ def create_handler(settings: Settings):
                     "webSearchEnabled": settings.web_search_enabled,
                     "webSearchProvider": settings.web_search_provider,
                     "maxResults": settings.web_search_max_results,
+                    "agentModeEnabled": True,
                 }
-                content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
+                self._send_json(payload)
+                return
+
+            if parsed.path == "/api/sessions":
+                self._send_json({"sessions": store.list_sessions()})
+                return
+
+            if parsed.path == "/api/session":
+                query = parse_qs(parsed.query)
+                session_id = (query.get("sessionId") or [""])[0].strip()
+                if not session_id:
+                    self._send_json({"error": "缺少 sessionId"}, status=400)
+                    return
+                self._send_json({"messages": store.get_messages(session_id)})
                 return
 
             self._send_static(parsed.path)
@@ -121,6 +144,8 @@ def create_handler(settings: Settings):
                 payload = json.loads(raw_body.decode("utf-8"))
                 question = str(payload.get("message", "")).strip()
                 use_web_search = bool(payload.get("webSearch", False))
+                use_agent = bool(payload.get("agentMode", False))
+                session_id = str(payload.get("sessionId", "")).strip()
                 history = _messages_from_payload(payload.get("history", []))
             except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as exc:
                 self.send_error(400, f"请求格式错误：{exc}")
@@ -128,6 +153,9 @@ def create_handler(settings: Settings):
 
             if not question:
                 self.send_error(400, "消息不能为空。")
+                return
+            if not session_id:
+                self.send_error(400, "缺少 sessionId。")
                 return
 
             self.send_response(200)
@@ -137,7 +165,45 @@ def create_handler(settings: Settings):
             self.end_headers()
 
             try:
-                if use_web_search:
+                logger.info(
+                    "Chat request session=%s agent=%s web_search=%s chars=%d",
+                    session_id,
+                    use_agent,
+                    use_web_search,
+                    len(question),
+                )
+                store.ensure_session(session_id, title=question[:40] or "新会话")
+                store.add_message(session_id, "user", question)
+
+                if use_agent:
+                    self.wfile.write(
+                        _json_line({"type": "status", "content": "Agent 正在规划工具调用..."})
+                    )
+                    self.wfile.flush()
+
+                    def emit_tool_event(event: dict) -> None:
+                        content = (
+                            f"{event.get('phase', '')}: {event.get('tool', '')}\n"
+                            f"输入：{event.get('input', '')}\n"
+                            f"结果：{event.get('error') or event.get('preview') or ''}"
+                        ).strip()
+                        store.add_message(session_id, "tool", content, metadata=event)
+                        self.wfile.write(_json_line({"type": "tool", **event}))
+                        self.wfile.flush()
+
+                    answer, _updated_history = ask_agent(
+                        question,
+                        history,
+                        settings,
+                        on_tool_event=emit_tool_event,
+                    )
+                    self.wfile.write(_json_line({"type": "chunk", "content": answer}))
+                    self.wfile.flush()
+                    store.add_message(session_id, "assistant", answer, metadata={"agentMode": True})
+                    self.wfile.write(_json_line({"type": "done"}))
+                    self.wfile.flush()
+                    return
+                elif use_web_search:
                     self.wfile.write(_json_line({"type": "status", "content": "正在联网搜索..."}))
                     self.wfile.flush()
                     search_context = prepare_web_search_context(question, settings)
@@ -154,12 +220,22 @@ def create_handler(settings: Settings):
                 else:
                     chunks = stream_conversation(question, history, settings)
 
+                answer_chunks: list[str] = []
                 for chunk in chunks:
+                    answer_chunks.append(chunk)
                     self.wfile.write(_json_line({"type": "chunk", "content": chunk}))
                     self.wfile.flush()
+                answer = "".join(answer_chunks)
+                store.add_message(
+                    session_id,
+                    "assistant",
+                    answer,
+                    metadata={"webSearch": use_web_search, "agentMode": False},
+                )
                 self.wfile.write(_json_line({"type": "done"}))
                 self.wfile.flush()
             except Exception as exc:  # noqa: BLE001 - surface backend errors in the UI.
+                logger.exception("Chat request failed session=%s", session_id)
                 self.wfile.write(_json_line({"type": "error", "content": str(exc)}))
                 self.wfile.flush()
 

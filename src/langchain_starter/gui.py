@@ -14,6 +14,7 @@ from langchain_starter.chat import (
     stream_conversation_with_search_context,
 )
 from langchain_starter.config import Settings
+from langchain_starter.storage import ConversationStore
 
 
 class ChatWindow:
@@ -22,6 +23,8 @@ class ChatWindow:
     def __init__(self, root: tk.Tk, settings: Settings) -> None:
         self.root = root
         self.settings = settings
+        self.store = ConversationStore()
+        self.session_id = self.store.get_latest_session_id() or self.store.create_session()
         self.history: list[BaseMessage] = []
         self.transcript: list[tuple[str, str]] = []
         self.is_waiting = False
@@ -37,6 +40,7 @@ class ChatWindow:
 
         self._configure_style()
         self._build_widgets()
+        self._load_persisted_messages()
         self._bring_to_front()
         self.root.bind_all("<Command-c>", self.copy_selected_text)
         self.root.bind_all("<Control-c>", self.copy_selected_text)
@@ -202,9 +206,9 @@ class ChatWindow:
 
         clear_button = ttk.Button(
             composer,
-            text="清空对话",
+            text="新对话",
             style="Ghost.TButton",
-            command=self.clear_messages,
+            command=self.start_new_session,
         )
         clear_button.grid(row=1, column=2, sticky="e", padx=(10, 0), pady=(10, 0))
 
@@ -222,12 +226,32 @@ class ChatWindow:
         paned.add(chat_shell, weight=4)
         paned.add(composer, weight=1)
 
-        self._append_message(
-            "系统",
-            "输入问题开始对话。我会记住当前窗口里的上下文。"
-            "支持触摸板/鼠标滚轮浏览历史，选中文本后按 Command+C 复制。",
-        )
         self.input_text.focus_set()
+
+    def _load_persisted_messages(self) -> None:
+        messages = self.store.get_messages(self.session_id)
+        if not messages:
+            self._append_message(
+                "系统",
+                "输入问题开始对话。聊天记录会保存在本地 SQLite，重启后可恢复。"
+                "支持触摸板/鼠标滚轮浏览历史，选中文本后按 Command+C 复制。",
+            )
+            return
+
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if role == "user":
+                self.history.append(HumanMessage(content=content))
+                self._append_message("你", content)
+            elif role == "assistant":
+                self.history.append(AIMessage(content=content))
+                self._append_message("AI", content)
+            elif role == "tool":
+                self._append_message("工具", content)
+            else:
+                self._append_message("系统", content)
+        self.status_label.configure(text="已恢复历史")
 
     def _update_scroll_region(self, _event: tk.Event) -> None:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -445,6 +469,9 @@ class ChatWindow:
 
     def _append_stream_chunk(self, widget: tk.Text, chunk: str) -> None:
         widget.configure(state=tk.NORMAL)
+        if getattr(widget, "_is_pending_answer", False):
+            widget.delete("1.0", tk.END)
+            widget._is_pending_answer = False
         widget.insert(tk.END, chunk)
         content = widget.get("1.0", "end-1c")
         estimated_lines = sum(
@@ -461,16 +488,18 @@ class ChatWindow:
         status = "模型正在回复..." if waiting else "就绪"
         self.status_label.configure(text=status)
 
-    def clear_messages(self) -> None:
+    def start_new_session(self) -> None:
         if self.is_waiting:
             return
 
+        self.session_id = self.store.create_session()
         self.history = []
         self.transcript = []
         self.message_count = 0
         for child in self.messages_frame.winfo_children():
             child.destroy()
-        self._append_message("系统", "对话已清空，可以开始新的上下文。")
+        self._append_message("系统", "已创建新对话，可以开始新的上下文。")
+        self.status_label.configure(text="新对话")
 
     def send_message(self) -> None:
         if self.is_waiting:
@@ -482,6 +511,8 @@ class ChatWindow:
 
         self.input_text.delete("1.0", tk.END)
         self._append_message("你", question)
+        self.store.ensure_session(self.session_id, title=question[:40] or "新会话")
+        self.store.add_message(self.session_id, "user", question)
         use_web_search = self.web_search_enabled.get()
         self._set_waiting(True)
         if use_web_search:
@@ -506,7 +537,9 @@ class ChatWindow:
         stream_widget_holder: dict[str, tk.Text] = {}
 
         def create_stream_message() -> None:
-            stream_widget_holder["widget"] = self._append_message("AI", "", record=False)
+            widget = self._append_message("AI", "思考中...", record=False)
+            widget._is_pending_answer = True
+            stream_widget_holder["widget"] = widget
             stream_ready.set()
 
         try:
@@ -549,6 +582,12 @@ class ChatWindow:
     ) -> None:
         self.history = updated_history
         self.transcript.append(("AI", answer))
+        self.store.add_message(
+            self.session_id,
+            "assistant",
+            answer,
+            metadata={"webSearch": self.web_search_enabled.get()},
+        )
         self._set_waiting(False)
 
     def _show_error(self, exc: Exception) -> None:

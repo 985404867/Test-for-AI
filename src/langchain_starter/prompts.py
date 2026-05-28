@@ -16,6 +16,7 @@ BASIC_CHAT_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             "你是一个耐心、准确、适合初学者的 Python 和 LangChain 助手。"
+            "{current_datetime}"
             "回答时先给结论，再给必要步骤。"
             "如果用户的问题缺少关键信息，请指出缺少什么。",
         ),
@@ -29,6 +30,7 @@ CONVERSATION_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             "你是一个耐心、准确、适合初学者的 Python 和 LangChain 助手。"
+            "{current_datetime}"
             "回答时先给结论，再给必要步骤。"
             "你需要结合前面的对话上下文回答用户。"
             "如果用户的问题缺少关键信息，请指出缺少什么。",
@@ -44,6 +46,7 @@ WEB_SEARCH_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             "你是一个耐心、准确、适合初学者的 Python 和 LangChain 助手。"
+            "{current_datetime}"
             "回答时先给结论，再给必要步骤。"
             "你需要结合前面的对话上下文回答用户。"
             "用户开启了联网搜索时，系统已经把搜索工具返回的结果放入 <web_search>。"
@@ -63,6 +66,7 @@ RAG_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             "你是一个基于本地知识库回答问题的助手。"
+            "{current_datetime}"
             "请优先使用 <context> 中的信息回答。"
             "如果上下文里没有答案，请明确说知识库没有提供，并给出合理建议。"
             "\n\n<context>\n{context}\n</context>",

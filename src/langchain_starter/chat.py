@@ -18,6 +18,7 @@ from langchain_starter.prompts import (
     CONVERSATION_PROMPT,
     WEB_SEARCH_PROMPT,
 )
+from langchain_starter.time_context import current_datetime_context
 from langchain_starter.web_search import format_search_context, search_web
 
 
@@ -65,7 +66,12 @@ def ask_chat(question: str, settings: Settings) -> str:
 
     model = create_chat_model(settings)
     chain = BASIC_CHAT_PROMPT | model
-    response = chain.invoke({"question": question})
+    response = chain.invoke(
+        {
+            "question": question,
+            "current_datetime": current_datetime_context(),
+        }
+    )
     return response.content
 
 
@@ -99,6 +105,7 @@ def _stream_with_auto_continue(
         inputs = {
             "question": current_question,
             "history": current_history,
+            "current_datetime": current_datetime_context(),
             **(extra_inputs or {}),
         }
         finish_reason = None
