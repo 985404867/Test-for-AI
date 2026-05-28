@@ -29,6 +29,7 @@ class ConversationStore:
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL DEFAULT '新会话',
+                    deleted_at TEXT,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
@@ -47,6 +48,12 @@ class ConversationStore:
                     ON messages(session_id, id);
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            if "deleted_at" not in columns:
+                connection.execute("ALTER TABLE sessions ADD COLUMN deleted_at TEXT")
 
     def ensure_session(self, session_id: str, title: str = "新会话") -> None:
         with self._connect() as connection:
@@ -75,11 +82,60 @@ class ConversationStore:
                 """
                 SELECT id
                 FROM sessions
+                WHERE deleted_at IS NULL
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """
             ).fetchone()
         return str(row["id"]) if row else None
+
+    def rename_session(self, session_id: str, title: str) -> bool:
+        title = title.strip()
+        if not title:
+            raise ValueError("标题不能为空。")
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET title = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (title, session_id),
+            )
+        return cursor.rowcount > 0
+
+    def delete_session(self, session_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET deleted_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (session_id,),
+            )
+        return cursor.rowcount > 0
+
+    def restore_session(self, session_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE sessions
+                SET deleted_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND deleted_at IS NOT NULL
+                """,
+                (session_id,),
+            )
+        return cursor.rowcount > 0
+
+    def purge_session(self, session_id: str) -> bool:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            cursor = connection.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+        return cursor.rowcount > 0
 
     def touch_session(self, session_id: str) -> None:
         with self._connect() as connection:
@@ -114,17 +170,6 @@ class ConversationStore:
                 (session_id,),
             )
 
-    def list_sessions(self) -> list[dict[str, Any]]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, title, created_at, updated_at
-                FROM sessions
-                ORDER BY updated_at DESC
-                """
-            ).fetchall()
-        return [dict(row) for row in rows]
-
     def get_messages(self, session_id: str) -> list[dict[str, Any]]:
         self.ensure_session(session_id)
         with self._connect() as connection:
@@ -147,3 +192,47 @@ class ConversationStore:
                 item["metadata"] = {}
             messages.append(item)
         return messages
+
+    def search_sessions(self, keyword: str, *, include_deleted: bool = False) -> list[dict[str, Any]]:
+        keyword = keyword.strip()
+        if not keyword:
+            return self.list_sessions() if not include_deleted else self.list_deleted_sessions()
+
+        like = f"%{keyword}%"
+        deleted_clause = "" if include_deleted else "AND deleted_at IS NULL"
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT id, title, created_at, updated_at, deleted_at
+                FROM sessions
+                WHERE (title LIKE ? OR id LIKE ?)
+                {deleted_clause}
+                ORDER BY updated_at DESC
+                """,
+                (like, like),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_deleted_sessions(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, title, created_at, updated_at, deleted_at
+                FROM sessions
+                WHERE deleted_at IS NOT NULL
+                ORDER BY deleted_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_sessions(self) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, title, created_at, updated_at, deleted_at
+                FROM sessions
+                WHERE deleted_at IS NULL
+                ORDER BY updated_at DESC
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]

@@ -19,8 +19,8 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-# 让 `python main.py ...` 和 PyCharm 直接运行 main.py 都能找到 src 里的包。
-# 更正式的做法是 `pip install -e .`，但入门项目保留这个小兼容会更省心。
+# 让 `python main.py ...` 和 PyCharm 直接运行 `main.py` 时都能找到 `src` 里的包。
+# 更正式的做法是安装为可编辑包，但这个项目保留这段兼容，使用起来更直接。
 PROJECT_ROOT = Path(__file__).resolve().parent
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
@@ -41,7 +41,7 @@ from langchain_starter.web_server import run_web_app
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """集中定义命令行参数，后面想加新命令时只改这里。"""
+    """集中定义命令行参数，方便后续扩展入口命令。"""
 
     parser = argparse.ArgumentParser(description="LangChain starter project")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -65,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_interactive() -> None:
-    """一个最小交互循环，方便你在 PyCharm 里边跑边改。"""
+    """终端交互模式，便于快速验证聊天、RAG 和联网搜索。"""
 
     settings = load_settings()
     history = []
@@ -138,7 +138,7 @@ def run_agent_interactive() -> None:
 
 
 def main() -> None:
-    """根据命令选择普通聊天、RAG 问答或交互模式。"""
+    """根据子命令分发到普通聊天、RAG、Agent、GUI 或 Web 界面。"""
 
     setup_logging()
     args = build_parser().parse_args()

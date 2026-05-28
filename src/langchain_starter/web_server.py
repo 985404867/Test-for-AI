@@ -118,7 +118,15 @@ def create_handler(settings: Settings):
                 return
 
             if parsed.path == "/api/sessions":
-                self._send_json({"sessions": store.list_sessions()})
+                query = parse_qs(parsed.query)
+                include_deleted = (query.get("deleted") or ["0"])[0].strip() in {"1", "true", "yes"}
+                keyword = (query.get("q") or [""])[0].strip()
+                sessions = (
+                    store.search_sessions(keyword, include_deleted=include_deleted)
+                    if keyword
+                    else (store.list_deleted_sessions() if include_deleted else store.list_sessions())
+                )
+                self._send_json({"sessions": sessions})
                 return
 
             if parsed.path == "/api/session":
@@ -131,6 +139,64 @@ def create_handler(settings: Settings):
                 return
 
             self._send_static(parsed.path)
+
+        def do_DELETE(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/session":
+                self.send_error(404)
+                return
+
+            query = parse_qs(parsed.query)
+            session_id = (query.get("sessionId") or [""])[0].strip()
+            if not session_id:
+                self._send_json({"error": "缺少 sessionId"}, status=400)
+                return
+
+            purge = (query.get("purge") or ["0"])[0].strip() in {"1", "true", "yes"}
+            deleted = store.purge_session(session_id) if purge else store.delete_session(session_id)
+            logger.info(
+                "Deleted chat session session=%s deleted=%s purge=%s",
+                session_id,
+                deleted,
+                purge,
+            )
+            self._send_json({"deleted": deleted, "purged": purge})
+
+        def do_PATCH(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != "/api/session":
+                self.send_error(404)
+                return
+
+            content_length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(content_length)
+            try:
+                payload = json.loads(raw_body.decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self.send_error(400, f"请求格式错误：{exc}")
+                return
+
+            session_id = str(payload.get("sessionId", "")).strip()
+            if not session_id:
+                self._send_json({"error": "缺少 sessionId"}, status=400)
+                return
+
+            if payload.get("restore"):
+                ok = store.restore_session(session_id)
+                self._send_json({"restored": ok})
+                return
+
+            title = str(payload.get("title", "")).strip()
+            if not title:
+                self._send_json({"error": "缺少 title"}, status=400)
+                return
+
+            try:
+                ok = store.rename_session(session_id, title)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=400)
+                return
+            self._send_json({"renamed": ok, "title": title})
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)

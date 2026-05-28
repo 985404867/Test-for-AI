@@ -1,42 +1,45 @@
 # LangChain Starter
 
-这是一个适合在 PyCharm 里拆解学习的 Python LangChain 项目。项目把“配置链接、上下文、提示词、模型调用、RAG 检索、命令行入口”拆成了独立文件，方便你逐步修改。
+这是一个可直接在 PyCharm 里运行和改造的 Python LangChain 项目，目标是把常见能力拆开：配置、模型、RAG、联网搜索、Agent、GUI 和 Web 前端都放在独立模块里，方便逐步学习和维护。
+
+## 主要能力
+
+- 普通聊天
+- 本地知识库 RAG
+- Tool Calling Agent
+- 联网搜索
+- 桌面 GUI 对话
+- React Web 对话
+- 会话持久化、重命名、删除、恢复
+- 流式输出和工具调用展示
 
 ## 目录结构
 
 ```text
 langchain_starter/
-├── .env.example                 # 环境变量示例：API Key、模型名、兼容接口地址等
-├── requirements.txt             # Python 依赖
-├── pyproject.toml               # 项目基础配置
-├── main.py                      # 命令行入口，PyCharm 可直接运行
+├── .env.example                 # 环境变量示例
+├── main.py                      # 命令行入口
 ├── data/
-│   └── knowledge.md             # 示例知识库，上下文/RAG 从这里读取
+│   └── knowledge.md             # 示例知识库
 ├── src/langchain_starter/
-│   ├── config.py                # 所有可修改配置集中在这里读取
-│   ├── llm.py                   # 创建大模型和 Embedding
-│   ├── tools.py                 # LangChain Tools：联网搜索、本地知识库检索
+│   ├── config.py                # 配置读取
+│   ├── llm.py                   # 大模型与 Embedding
+│   ├── prompts.py               # 提示词模板
+│   ├── context.py               # 上下文加载与切分
+│   ├── rag.py                   # RAG 检索链
+│   ├── web_search.py            # 联网搜索实现
+│   ├── tools.py                 # Agent Tools
 │   ├── agent.py                 # Tool Calling Agent
-│   ├── storage.py               # SQLite 会话和聊天记录存储
-│   ├── prompts.py               # 提示词模板集中管理
-│   ├── context.py               # 上下文文档加载与切分
-│   ├── rag.py                   # RAG 检索问答链
-│   ├── web_search.py            # 联网搜索工具
-│   ├── web_server.py            # React Web 对话界面服务
-│   ├── static/                  # React 前端页面
-│   └── chat.py                  # 普通聊天链
-└── tests/
-    └── test_config.py           # 一个很小的配置测试示例
+│   ├── chat.py                  # 普通聊天链
+│   ├── storage.py               # SQLite 会话存储
+│   ├── time_context.py          # 当前日期时间上下文
+│   ├── logging_config.py        # 日志配置
+│   ├── web_server.py            # Web API + 静态服务
+│   └── static/                  # React 前端资源
+└── tests/                       # 基础测试
 ```
 
-## 在 PyCharm 中打开
-
-1. 打开 PyCharm。
-2. 选择 `Open`。
-3. 打开这个文件夹：`/Users/zhangyuqi/Desktop/codex/lanchain/langchain_starter`
-4. PyCharm 会把它识别为一个 Python 项目。
-
-## 安装依赖
+## 安装
 
 建议先创建虚拟环境：
 
@@ -46,35 +49,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 配置 API
-
 复制环境变量文件：
 
 ```bash
 cp .env.example .env
 ```
 
-然后编辑 `.env`：
-
-```env
-OPENAI_API_KEY=你的_api_key
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_BASE_URL=https://api.deepseek.com
-EMBEDDING_PROVIDER=local
-EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_MAX_TOKENS=8192
-AUTO_CONTINUE_ENABLED=true
-AUTO_CONTINUE_MAX_ROUNDS=4
-WEB_SEARCH_ENABLED=true
-WEB_SEARCH_PROVIDER=auto
-WEB_SEARCH_FETCH_PAGES=true
-```
-
-如果你使用的是 OpenAI 兼容接口，比如某些代理或自建网关，可以填写：
-
-```env
-OPENAI_BASE_URL=https://你的兼容接口/v1
-```
+然后按你的接口填好 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` 等配置。
 
 ## 运行
 
@@ -84,81 +65,77 @@ OPENAI_BASE_URL=https://你的兼容接口/v1
 python main.py chat "用三句话解释 LangChain 是什么"
 ```
 
-基于本地知识库的 RAG 问答：
+RAG 问答：
 
 ```bash
 python main.py rag "这个项目的配置应该从哪里改？"
 ```
 
-交互模式：
+终端交互模式：
 
 ```bash
 python main.py interactive
 ```
 
-Tool Calling Agent：
+Agent 模式：
 
 ```bash
 python main.py agent "这个项目如何运行？"
 python main.py agent-interactive
 ```
 
-Agent 会按需调用两个工具：
-
-- `web_search`：联网搜索实时或外部信息
-- `local_knowledge_search`：检索 `data/knowledge.md` 本地知识库
-
-在交互模式里使用联网搜索：
-
-```text
-/search 今天 LangChain 有什么新版本变化？
-```
-
-桌面对话框：
+桌面 GUI：
 
 ```bash
 python main.py gui
 ```
 
-React Web 对话界面：
+React Web 界面：
 
 ```bash
 python main.py web
 ```
 
-启动后访问终端里显示的本地地址，例如 `http://127.0.0.1:8000`。
-Web 界面支持 `Agent 模式`，开启后模型会按需自动调用：
+## Web 界面说明
 
-- `web_search`：联网搜索实时或外部信息
-- `local_knowledge_search`：检索本地知识库
+Web 界面默认支持：
 
-工具调用过程会以卡片形式显示在聊天历史中，方便观察 Agent 的决策过程。
-Web 和桌面 GUI 会把会话历史保存到 SQLite：`data/conversations.sqlite3`。
-Web 界面支持切换历史会话和新建会话；刷新页面后会自动恢复当前浏览器会话。
-桌面 GUI 启动后会自动恢复最近一次会话，点击“新对话”可以开始新的上下文。
-工具调用和系统运行日志会写入：`data/logs/app.log`。
+- Agent 模式
+- 联网搜索
+- 流式输出
+- 工具调用卡片
+- 历史会话切换
+- 会话搜索、重命名、删除、恢复
 
-在桌面对话框里，需要实时信息时勾选“联网搜索”。
-普通对话和联网搜索回答会流式输出；如果回答仍然偏短，可以调大 `.env` 里的
-`OPENAI_MAX_TOKENS`，例如 `8192` 或服务商允许的更大值。留空则不主动传输出长度限制。
-如果模型仍然因为服务商单次上限被截断，`AUTO_CONTINUE_ENABLED=true` 会自动续写并拼接结果。
-代理关闭后建议使用 `WEB_SEARCH_PROVIDER=auto`，会按百度、搜狗、Bing、DuckDuckGo 的顺序回退。
-如果你想固定搜索源，可以改为 `baidu`、`sogou`、`bing` 或 `duckduckgo`。
+会话和消息会保存在 SQLite：
 
-联网搜索默认会搜索网页，并尽量抓取前几个结果页的正文摘录。部分网站会阻止程序抓取，
-这时回答会只能基于搜索摘要。
-RAG 会缓存 FAISS 向量库到 `data/faiss_cache/`；当 `data/knowledge.md` 或 embedding 配置变化时会自动重建。
+```text
+data/conversations.sqlite3
+```
 
-## 你最常改的地方
+删除会话默认是软删除，回收站里可以恢复；如果要永久删除，可以在回收站中直接清理。
 
-- 改模型或接口地址：`.env`
-- 改 RAG 向量方式：`.env` 里的 `EMBEDDING_PROVIDER`
-- 改大模型参数：`src/langchain_starter/config.py`
+## 运行时数据
+
+以下目录和文件属于运行时数据，已经加入 `.gitignore`：
+
+- `data/conversations.sqlite3`
+- `data/faiss_cache/`
+- `data/logs/`
+
+## 测试
+
+```bash
+pytest
+```
+
+## 常改位置
+
+- 改模型和接口：`.env`
 - 改提示词：`src/langchain_starter/prompts.py`
-- 改知识库内容：`data/knowledge.md`
-- 改 RAG 流程：`src/langchain_starter/rag.py`
-- 改联网搜索逻辑：`src/langchain_starter/web_search.py`
+- 改联网搜索：`src/langchain_starter/web_search.py`
 - 改 Agent 工具：`src/langchain_starter/tools.py`
 - 改 Agent 流程：`src/langchain_starter/agent.py`
-- 改 React Web 界面：`src/langchain_starter/static/`
-- 改入口逻辑：`main.py`
+- 改会话存储：`src/langchain_starter/storage.py`
+- 改 Web 前端：`src/langchain_starter/static/`
+- 改入口命令：`main.py`

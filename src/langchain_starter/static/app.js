@@ -55,6 +55,8 @@
     const [isThinking, setIsThinking] = useState(false);
     const [sessionId, setSessionId] = useState(getOrCreateSessionId);
     const [sessions, setSessions] = useState([]);
+    const [deletedSessions, setDeletedSessions] = useState([]);
+    const [sessionQuery, setSessionQuery] = useState("");
     const listRef = useRef(null);
     const inputRef = useRef(null);
     const sessionStorageKey = "langchain-starter-session-id";
@@ -71,13 +73,31 @@
       ];
     }, [sessions, sessionId]);
 
+    const normalizedQuery = sessionQuery.trim().toLowerCase();
+    const filteredSessions = useMemo(() => {
+      if (!normalizedQuery) return sessionsForList;
+      return sessionsForList.filter((session) => {
+        const haystack = `${session.title || ""} ${session.id || ""}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      });
+    }, [normalizedQuery, sessionsForList]);
+
+    const filteredDeletedSessions = useMemo(() => {
+      if (!normalizedQuery) return deletedSessions;
+      return deletedSessions.filter((session) => {
+        const haystack = `${session.title || ""} ${session.id || ""}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      });
+    }, [normalizedQuery, deletedSessions]);
+
     useEffect(() => {
       fetch("/api/config")
         .then((response) => response.json())
         .then((data) => {
           setConfig(data);
-          setWebSearch(Boolean(data.webSearchEnabled));
-          setAgentMode(Boolean(data.agentModeEnabled));
+          const nextAgentMode = Boolean(data.agentModeEnabled);
+          setAgentMode(nextAgentMode);
+          setWebSearch(nextAgentMode ? false : Boolean(data.webSearchEnabled));
         })
         .catch(() => setStatus("配置读取失败"));
     }, []);
@@ -89,6 +109,16 @@
         setSessions(Array.isArray(data.sessions) ? data.sessions : []);
       } catch {
         setStatus("历史会话读取失败");
+      }
+    }
+
+    async function refreshDeletedSessions() {
+      try {
+        const response = await fetch("/api/sessions?deleted=1");
+        const data = await response.json();
+        setDeletedSessions(Array.isArray(data.sessions) ? data.sessions : []);
+      } catch {
+        setStatus("回收站读取失败");
       }
     }
 
@@ -122,6 +152,7 @@
     useEffect(() => {
       loadSession(sessionId);
       refreshSessions();
+      refreshDeletedSessions();
     }, []);
 
     useEffect(() => {
@@ -137,6 +168,15 @@
           .map((message) => ({ role: message.role, content: message.content })),
       [messages]
     );
+
+    const conversationCount = useMemo(
+      () => messages.filter((message) => message.role === "user" || message.role === "assistant").length,
+      [messages]
+    );
+
+    const currentModeLabel = agentMode ? "Agent 模式" : webSearch ? "联网搜索" : "纯聊天";
+    const currentSessionTitle =
+      sessionsForList.find((session) => session.id === sessionId)?.title || "新会话";
 
     async function copyText(text) {
       await navigator.clipboard.writeText(text);
@@ -161,6 +201,31 @@
       await copyText(transcript);
     }
 
+    async function renameSession(targetSession) {
+      if (!targetSession?.id || isThinking) return;
+      const currentTitle = targetSession.title || "新会话";
+      const nextTitle = window.prompt("输入新的会话名称", currentTitle)?.trim();
+      if (!nextTitle || nextTitle === currentTitle) return;
+
+      try {
+        const response = await fetch("/api/session", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: targetSession.id,
+            title: nextTitle,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        await Promise.all([refreshSessions(), refreshDeletedSessions()]);
+        setStatus("会话已重命名");
+      } catch (error) {
+        setStatus(`重命名失败：${error.message}`);
+      }
+    }
+
     function startNewSession() {
       const nextSessionId = crypto.randomUUID();
       localStorage.setItem(sessionStorageKey, nextSessionId);
@@ -174,6 +239,101 @@
     function switchSession(nextSessionId) {
       if (!nextSessionId || nextSessionId === sessionId || isThinking) return;
       loadSession(nextSessionId);
+    }
+
+    async function deleteSession(targetSession) {
+      if (!targetSession?.id || isThinking) return;
+      const title = targetSession.title || "新会话";
+      if (!window.confirm(`确定删除「${title}」吗？`)) return;
+
+      try {
+        const response = await fetch(
+          `/api/session?sessionId=${encodeURIComponent(targetSession.id)}`,
+          { method: "DELETE" }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const remainingSessions = sessions.filter((session) => session.id !== targetSession.id);
+        setSessions(remainingSessions);
+        setDeletedSessions((current) => [
+          {
+            ...targetSession,
+            deleted_at: new Date().toISOString(),
+          },
+          ...current.filter((session) => session.id !== targetSession.id),
+        ]);
+
+        if (targetSession.id === sessionId) {
+          const nextSession = remainingSessions[0];
+          if (nextSession) {
+            await loadSession(nextSession.id);
+          } else {
+            startNewSession();
+          }
+        }
+
+        setStatus("会话已删除");
+        window.setTimeout(() => {
+          refreshSessions();
+          refreshDeletedSessions();
+        }, 200);
+      } catch (error) {
+        setStatus(`删除失败：${error.message}`);
+      }
+    }
+
+    async function restoreSession(targetSession) {
+      if (!targetSession?.id || isThinking) return;
+      try {
+        const response = await fetch("/api/session", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: targetSession.id,
+            restore: true,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        setDeletedSessions((current) => current.filter((session) => session.id !== targetSession.id));
+        await refreshSessions();
+        setStatus("已恢复会话");
+      } catch (error) {
+        setStatus(`恢复失败：${error.message}`);
+      }
+    }
+
+    async function purgeSession(targetSession) {
+      if (!targetSession?.id || isThinking) return;
+      const title = targetSession.title || "新会话";
+      if (!window.confirm(`永久删除「${title}」吗？`)) return;
+
+      try {
+        const response = await fetch(
+          `/api/session?sessionId=${encodeURIComponent(targetSession.id)}&purge=1`,
+          { method: "DELETE" }
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        setDeletedSessions((current) => current.filter((session) => session.id !== targetSession.id));
+        setStatus("已永久删除");
+      } catch (error) {
+        setStatus(`永久删除失败：${error.message}`);
+      }
+    }
+
+    function activateAgentMode() {
+      setAgentMode(true);
+      setWebSearch(false);
+    }
+
+    function activateWebSearchMode() {
+      setWebSearch(true);
+      setAgentMode(false);
     }
 
     async function sendMessage() {
@@ -202,7 +362,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: question,
-            webSearch: agentMode ? false : webSearch,
+            webSearch,
             agentMode,
             sessionId,
             history: conversationHistory,
@@ -317,6 +477,15 @@
               h("p", { key: "subtitle" }, config.model),
             ]),
           ]),
+          h("label", { className: "session-search" }, [
+            h("span", { key: "label" }, "搜索会话"),
+            h("input", {
+              key: "input",
+              value: sessionQuery,
+              placeholder: "按标题或 ID 搜索",
+              onChange: (event) => setSessionQuery(event.target.value),
+            }),
+          ]),
           h(
             "button",
             {
@@ -330,22 +499,103 @@
           h(
             "nav",
             { className: "session-list", "aria-label": "历史会话" },
-            sessionsForList.map((session) =>
+            filteredSessions.map((session) =>
               h(
-                "button",
+                "div",
                 {
-                  className: classNames("session-item", session.id === sessionId && "active"),
-                  onClick: () => switchSession(session.id),
-                  disabled: isThinking,
+                  className: classNames("session-row", session.id === sessionId && "active"),
                   key: session.id,
-                  title: session.title || "新会话",
                 },
                 [
-                  h("span", { className: "session-title", key: "title" }, session.title || "新会话"),
-                  h("span", { className: "session-time", key: "time" }, formatSessionTime(session.updated_at)),
+                  h(
+                    "button",
+                    {
+                      className: "session-item",
+                      onClick: () => switchSession(session.id),
+                      disabled: isThinking,
+                      key: "open",
+                      title: session.title || "新会话",
+                    },
+                    [
+                      h("span", { className: "session-title", key: "title" }, session.title || "新会话"),
+                      h("span", { className: "session-time", key: "time" }, formatSessionTime(session.updated_at)),
+                    ]
+                  ),
+                  h(
+                    "button",
+                    {
+                      className: "session-rename",
+                      onClick: () => renameSession(session),
+                      disabled: isThinking,
+                      key: "rename",
+                      title: "重命名",
+                      "aria-label": `重命名会话 ${session.title || "新会话"}`,
+                    },
+                    "✎"
+                  ),
+                  h(
+                    "button",
+                    {
+                      className: "session-delete",
+                      onClick: () => deleteSession(session),
+                      disabled: isThinking,
+                      key: "delete",
+                      title: "删除会话",
+                      "aria-label": `删除会话 ${session.title || "新会话"}`,
+                    },
+                    "×"
+                  ),
                 ]
               )
             )
+          ),
+          h("div", { className: "session-heading" }, "回收站"),
+          h(
+            "nav",
+            { className: "session-list deleted", "aria-label": "回收站" },
+            filteredDeletedSessions.length
+              ? filteredDeletedSessions.map((session) =>
+                  h(
+                    "div",
+                    {
+                      className: "session-row deleted-row",
+                      key: session.id,
+                    },
+                    [
+                      h(
+                        "button",
+                        {
+                          className: "session-item",
+                          onClick: () => restoreSession(session),
+                          disabled: isThinking,
+                          key: "restore",
+                          title: session.title || "已删除会话",
+                        },
+                        [
+                          h("span", { className: "session-title", key: "title" }, session.title || "已删除会话"),
+                          h(
+                            "span",
+                            { className: "session-time", key: "time" },
+                            formatSessionTime(session.deleted_at || session.updated_at)
+                          ),
+                        ]
+                      ),
+                      h(
+                        "button",
+                        {
+                          className: "session-purge",
+                          onClick: () => purgeSession(session),
+                          disabled: isThinking,
+                          key: "purge",
+                          title: "永久删除",
+                          "aria-label": `永久删除会话 ${session.title || "已删除会话"}`,
+                        },
+                        "×"
+                      ),
+                    ]
+                  )
+                )
+              : h("div", { className: "empty-state" }, "没有已删除的会话")
           ),
           h("div", { className: "sidebar-footer" }, [
             h("span", { key: "provider" }, `搜索源 ${config.webSearchProvider}`),
@@ -360,13 +610,11 @@
             { className: "chat-header" },
             h("div", { className: "current-chat" }, [
               h("span", { className: "current-label", key: "label" }, "当前会话"),
-              h(
-                "strong",
-                { key: "title" },
-                sessionsForList.find((session) => session.id === sessionId)?.title || "新会话"
-              ),
+              h("strong", { key: "title" }, currentSessionTitle),
             ]),
             h("div", { className: "toolbar-actions" }, [
+              h("span", { className: "mode-pill", key: "mode" }, currentModeLabel),
+              h("span", { className: "count-pill", key: "count" }, `${conversationCount} 条消息`),
               h("button", { className: "ghost-button", onClick: copyAll, key: "copy" }, "复制全部"),
               h("span", { className: "status-pill", key: "status" }, status),
             ])
@@ -374,6 +622,16 @@
           h(
             "div",
             { className: "chat-panel", ref: listRef },
+            messages.length <= 1
+              ? h("div", { className: "empty-chat" }, [
+                  h("div", { className: "empty-chat-title", key: "title" }, "开始一个新对话"),
+                  h(
+                    "div",
+                    { className: "empty-chat-copy", key: "copy" },
+                    "可以直接提问，也可以切换模式让模型自动调用工具。"
+                  ),
+                ])
+              : null,
             messages.map((message, index) =>
               h(MessageBubble, {
                 key: message.id || `${message.role}-${index}`,
@@ -385,31 +643,28 @@
           h(
             "footer",
             { className: "composer" },
-            h(
-              "div",
-              { className: "mode-bar" },
+            h("div", { className: "mode-bar", role: "radiogroup", "aria-label": "模式切换" }, [
               h(
-                "label",
-                { className: "search-toggle" },
-                h("input", {
-                  type: "checkbox",
-                  checked: agentMode,
-                  onChange: (event) => setAgentMode(event.target.checked),
-                }),
-                h("span", null, "Agent")
+                "button",
+                {
+                  className: classNames("mode-chip", agentMode && "active"),
+                  onClick: activateAgentMode,
+                  type: "button",
+                  key: "agent",
+                },
+                "Agent 模式"
               ),
               h(
-                "label",
-                { className: classNames("search-toggle", agentMode && "disabled") },
-                h("input", {
-                  type: "checkbox",
-                  checked: webSearch,
-                  onChange: (event) => setWebSearch(event.target.checked),
-                  disabled: agentMode,
-                }),
-                h("span", null, "联网")
-              )
-            ),
+                "button",
+                {
+                  className: classNames("mode-chip", webSearch && "active"),
+                  onClick: activateWebSearchMode,
+                  type: "button",
+                  key: "web",
+                },
+                "联网搜索"
+              ),
+            ]),
             h("textarea", {
               ref: inputRef,
               value: input,
@@ -442,6 +697,18 @@
           : message.role === "tool"
             ? "工具"
             : "系统";
+    const timeLabel = message.time ? message.time : "";
+    const isTool = message.role === "tool";
+    const toolTitle = message.tool === "web_search" ? "联网搜索" : message.tool === "local_knowledge_search" ? "本地知识库" : "工具调用";
+    const phaseLabel =
+      message.phase === "start"
+        ? "开始"
+        : message.phase === "end"
+          ? "完成"
+          : message.phase === "error"
+            ? "失败"
+            : "";
+
     return h(
       "article",
       { className: classNames("message-row", message.role) },
@@ -449,14 +716,33 @@
         "div",
         { className: "bubble" },
         h("div", { className: "bubble-meta" }, [
-          h("span", { key: "label" }, label),
+          h("span", { className: "bubble-label", key: "label" }, label),
+          h("span", { className: "bubble-time", key: "time" }, timeLabel),
           h(
             "button",
             { key: "copy", onClick: () => onCopy(message.content), className: "copy-link" },
             "复制"
           ),
         ]),
-        h("div", { className: "bubble-content" }, message.content || " ")
+        isTool
+          ? h(
+              "details",
+              { className: "tool-details", open: message.phase !== "start" },
+              [
+                h("summary", { key: "summary" }, [
+                  h("span", { className: "tool-badge", key: "badge" }, toolTitle),
+                  phaseLabel ? h("span", { className: "tool-phase", key: "phase" }, phaseLabel) : null,
+                ]),
+                h("div", { className: "bubble-content tool-content", key: "content" }, message.content || " "),
+              ]
+            )
+          : h(
+              "div",
+              {
+                className: classNames("bubble-content", message.pending && "pending"),
+              },
+              message.content || " "
+            )
       )
     );
   }
