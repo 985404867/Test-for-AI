@@ -49,7 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser = subparsers.add_parser("chat", help="普通大模型问答，不读取知识库")
     chat_parser.add_argument("question", help="你要问模型的问题")
 
-    rag_parser = subparsers.add_parser("rag", help="基于 data/knowledge.md 的 RAG 问答")
+    rag_parser = subparsers.add_parser("rag", help="基于 data/knowledge/ 的 RAG 问答")
     rag_parser.add_argument("question", help="你要基于知识库提问的问题")
 
     agent_parser = subparsers.add_parser("agent", help="Tool Calling Agent 问答")

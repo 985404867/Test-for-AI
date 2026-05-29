@@ -18,7 +18,7 @@ def test_settings_can_be_constructed() -> None:
         embedding_provider="local",
         embedding_model="text-embedding-3-small",
         retriever_k=4,
-        knowledge_path=Path("data/knowledge.md"),
+        knowledge_path=Path("data/knowledge"),
         web_search_enabled=False,
         web_search_provider="baidu",
         web_search_max_results=5,

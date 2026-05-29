@@ -20,7 +20,7 @@ from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough
 
 from langchain_starter.config import Settings
-from langchain_starter.context import load_knowledge_file, split_documents
+from langchain_starter.context import iter_knowledge_files, load_knowledge_file, split_documents
 from langchain_starter.llm import create_chat_model, create_embeddings
 from langchain_starter.prompts import RAG_PROMPT
 from langchain_starter.time_context import current_datetime_context
@@ -42,11 +42,20 @@ def _format_context(documents: list[Document]) -> str:
 def _knowledge_signature(settings: Settings) -> dict[str, object]:
     """生成知识库缓存签名，用于判断向量库是否需要重建。"""
     knowledge_path = settings.knowledge_path
-    stat = knowledge_path.stat()
+    files = []
+    for file_path in iter_knowledge_files(knowledge_path):
+        stat = file_path.stat()
+        files.append(
+            {
+                "path": str(file_path.resolve()),
+                "mtime": stat.st_mtime,
+                "size": stat.st_size,
+            }
+        )
+
     return {
         "knowledge_path": str(knowledge_path.resolve()),
-        "mtime": stat.st_mtime,
-        "size": stat.st_size,
+        "files": files,
         "embedding_provider": settings.embedding_provider,
         "embedding_model": settings.embedding_model,
     }
@@ -97,7 +106,7 @@ def build_retriever(settings: Settings):
     embeddings = create_embeddings(settings)
     vector_store = _load_cached_vector_store(settings, embeddings)
     if vector_store is None:
-        logger.info("Building FAISS index from knowledge file")
+        logger.info("Building FAISS index from knowledge path %s", settings.knowledge_path)
         documents = load_knowledge_file(settings.knowledge_path)
         chunks = split_documents(documents)
         vector_store = FAISS.from_documents(chunks, embeddings)

@@ -149,7 +149,7 @@ def load_settings() -> Settings:
         embedding_provider=os.getenv("EMBEDDING_PROVIDER", "local").strip().lower(),
         embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small").strip(),
         retriever_k=_env_int("RETRIEVER_K", "4"),
-        knowledge_path=Path(os.getenv("KNOWLEDGE_PATH", "data/knowledge.md")),
+        knowledge_path=Path(os.getenv("KNOWLEDGE_PATH", "data/knowledge")),
         web_search_enabled=_env_bool("WEB_SEARCH_ENABLED", True),
         web_search_provider=os.getenv("WEB_SEARCH_PROVIDER", "auto").strip().lower(),
         web_search_max_results=_env_int("WEB_SEARCH_MAX_RESULTS", "5"),

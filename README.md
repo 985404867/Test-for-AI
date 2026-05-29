@@ -20,7 +20,8 @@ langchain_starter/
 ├── .env.example                 # 环境变量示例
 ├── main.py                      # 命令行入口
 ├── data/
-│   └── knowledge.md             # 示例知识库
+│   └── knowledge/               # 示例知识库目录，可放 Markdown、文本和 SQL
+│       └── project.md           # 项目说明示例知识
 ├── src/langchain_starter/
 │   ├── config.py                # 配置读取
 │   ├── llm.py                   # 大模型与 Embedding
@@ -114,6 +115,16 @@ data/conversations.sqlite3
 ```
 
 删除会话默认是软删除，回收站里可以恢复；如果要永久删除，可以在回收站中直接清理。
+
+## 知识库目录
+
+默认知识库路径是：
+
+```text
+data/knowledge/
+```
+
+RAG 会递归读取该目录下的 `.md`、`.txt`、`.sql` 文件。你可以把项目文档、数据开发说明、常用 SQL、表结构说明放进去。仍然可以把 `KNOWLEDGE_PATH` 配成单个文件，例如 `data/knowledge/project.md`，旧的单文件模式也兼容。
 
 ## 运行时数据
 

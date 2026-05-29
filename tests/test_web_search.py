@@ -24,7 +24,7 @@ def _settings() -> Settings:
         embedding_provider="local",
         embedding_model="text-embedding-3-small",
         retriever_k=4,
-        knowledge_path=Path("data/knowledge.md"),
+        knowledge_path=Path("data/knowledge"),
         web_search_enabled=True,
         web_search_provider="bing",
         web_search_max_results=2,

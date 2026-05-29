@@ -133,7 +133,7 @@ def create_agent_tools(
             description=(
                 "Search the local project knowledge base. Use this for questions about "
                 "this starter project, local documentation, configuration, RAG content, "
-                "or facts likely stored in data/knowledge.md. Input should be the user's question."
+                "or facts likely stored in data/knowledge/. Input should be the user's question."
             ),
         ),
     ]

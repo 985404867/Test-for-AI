@@ -13,7 +13,7 @@
 - `OPENAI_BASE_URL`：OpenAI 兼容接口地址，留空表示使用官方接口。
 - `OPENAI_TEMPERATURE`：模型回答的发散程度。
 - `RETRIEVER_K`：RAG 检索返回的上下文数量。
-- `KNOWLEDGE_PATH`：知识库文件路径。
+- `KNOWLEDGE_PATH`：知识库路径，可以是单个文件，也可以是目录。
 
 Python 代码会通过 `src/langchain_starter/config.py` 读取这些配置。
 
@@ -28,9 +28,9 @@ RAG 问答使用 `RAG_PROMPT`。
 
 ## 上下文在哪里修改
 
-示例知识库是 `data/knowledge.md`。
+示例知识库目录是 `data/knowledge/`。
 
-RAG 会先读取这个文件，再把它切分成多个小文本块，然后用向量检索找出和用户问题最相关的内容。
+RAG 会递归读取目录下的 `.md`、`.txt`、`.sql` 文件，再把它们切分成多个小文本块，然后用向量检索找出和用户问题最相关的内容。
 
 ## 模型调用在哪里修改
 
@@ -53,9 +53,8 @@ RAG 主流程在 `src/langchain_starter/rag.py`。
 
 ## 常见扩展方向
 
-- 把 `data/knowledge.md` 换成多个 Markdown、PDF 或网页。
+- 在 `data/knowledge/` 中增加更多 Markdown、文本、SQL、PDF 或网页资料。
 - 把 FAISS 向量库保存到磁盘。
 - 增加聊天历史，实现多轮对话。
 - 增加 FastAPI，做成网页接口。
 - 增加 Streamlit，做成可视化小应用。
-
