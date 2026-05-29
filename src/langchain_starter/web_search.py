@@ -15,6 +15,8 @@ from langchain_starter.config import Settings
 
 @dataclass(frozen=True)
 class SearchResult:
+    """联网搜索结果的标准数据结构。"""
+
     title: str
     snippet: str
     url: str
@@ -22,6 +24,7 @@ class SearchResult:
 
 
 def _request_text(url: str, timeout: float) -> str:
+    """发起 HTTP 请求并返回文本内容。"""
     request = Request(
         url,
         headers={
@@ -41,6 +44,7 @@ def _request_text(url: str, timeout: float) -> str:
 
 
 def _clean_text(value: str) -> str:
+    """清洗 HTML 文本，去掉脚本、样式和多余空白。"""
     value = re.sub(r"<script[\s\S]*?</script>", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"<style[\s\S]*?</style>", " ", value, flags=re.IGNORECASE)
     value = re.sub(r"<[^>]+>", " ", value)
@@ -50,6 +54,7 @@ def _clean_text(value: str) -> str:
 
 
 def _decode_duckduckgo_url(url: str) -> str:
+    """解码 DuckDuckGo 搜索结果里的跳转链接。"""
     parsed = urlparse(html.unescape(url))
     if "duckduckgo.com" not in parsed.netloc:
         return html.unescape(url)
@@ -61,6 +66,7 @@ def _decode_duckduckgo_url(url: str) -> str:
 
 
 def _extract_duckduckgo_html_results(page_html: str) -> list[SearchResult]:
+    """从 DuckDuckGo HTML 页面中提取搜索结果。"""
     results: list[SearchResult] = []
     blocks = re.findall(
         r'<div[^>]+class="[^"]*result[^"]*"[\s\S]*?</div>\s*</div>',
@@ -98,6 +104,7 @@ def _extract_duckduckgo_html_results(page_html: str) -> list[SearchResult]:
 
 
 def _decode_baidu_url(url: str) -> str:
+    """解码百度搜索结果里的相对链接或跳转链接。"""
     url = html.unescape(url)
     if url.startswith("//"):
         return f"https:{url}"
@@ -107,6 +114,7 @@ def _decode_baidu_url(url: str) -> str:
 
 
 def _extract_baidu_results(page_html: str) -> list[SearchResult]:
+    """从百度搜索页面中提取结果。"""
     if "百度安全验证" in page_html or "wappass.baidu.com" in page_html:
         return []
 
@@ -150,6 +158,7 @@ def _extract_baidu_results(page_html: str) -> list[SearchResult]:
 
 
 def _search_baidu_html(query: str, settings: Settings) -> list[SearchResult]:
+    """使用百度 HTML 搜索接口抓取结果。"""
     params = urlencode({"wd": query, "rn": settings.web_search_max_results})
     page_html = _request_text(
         f"https://www.baidu.com/s?{params}",
@@ -159,6 +168,7 @@ def _search_baidu_html(query: str, settings: Settings) -> list[SearchResult]:
 
 
 def _extract_sogou_results(page_html: str) -> list[SearchResult]:
+    """从搜狗搜索页面中提取结果。"""
     results: list[SearchResult] = []
     blocks = re.findall(
         r'<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"[\s\S]*?(?=<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"|<div id="pagebar_container"|</body>)',
@@ -205,6 +215,7 @@ def _extract_sogou_results(page_html: str) -> list[SearchResult]:
 
 
 def _search_sogou_html(query: str, settings: Settings) -> list[SearchResult]:
+    """使用搜狗搜索接口抓取结果。"""
     params = urlencode({"query": query})
     page_html = _request_text(
         f"https://www.sogou.com/web?{params}",
@@ -214,6 +225,7 @@ def _search_sogou_html(query: str, settings: Settings) -> list[SearchResult]:
 
 
 def _extract_bing_results(page_html: str) -> list[SearchResult]:
+    """从 Bing 搜索页面中提取结果。"""
     results: list[SearchResult] = []
     blocks = re.findall(
         r'<li[^>]+class="[^"]*b_algo[^"]*"[\s\S]*?</li>',
@@ -242,6 +254,7 @@ def _extract_bing_results(page_html: str) -> list[SearchResult]:
 
 
 def _search_bing_html(query: str, settings: Settings) -> list[SearchResult]:
+    """使用 Bing 搜索接口抓取结果。"""
     params = urlencode({"q": query, "setlang": "zh-CN"})
     page_html = _request_text(
         f"https://www.bing.com/search?{params}",
@@ -251,6 +264,7 @@ def _search_bing_html(query: str, settings: Settings) -> list[SearchResult]:
 
 
 def _search_duckduckgo_html(query: str, settings: Settings) -> list[SearchResult]:
+    """使用 DuckDuckGo HTML 页面抓取结果。"""
     params = urlencode({"q": query})
     page_html = _request_text(
         f"https://duckduckgo.com/html/?{params}",
@@ -260,6 +274,7 @@ def _search_duckduckgo_html(query: str, settings: Settings) -> list[SearchResult
 
 
 def _collect_related_topics(items: list[dict], results: list[SearchResult]) -> None:
+    """递归收集 DuckDuckGo instant answer 里的相关主题。"""
     for item in items:
         if "Topics" in item:
             _collect_related_topics(item.get("Topics", []), results)
@@ -272,6 +287,7 @@ def _collect_related_topics(items: list[dict], results: list[SearchResult]) -> N
 
 
 def _search_duckduckgo_instant(query: str, settings: Settings) -> list[SearchResult]:
+    """使用 DuckDuckGo instant answer API 抓取结果。"""
     params = urlencode(
         {
             "q": query,
@@ -305,6 +321,7 @@ def _search_duckduckgo_instant(query: str, settings: Settings) -> list[SearchRes
 
 
 def _fetch_page_text(result: SearchResult, settings: Settings) -> SearchResult:
+    """抓取单个结果页正文，用于补充搜索摘要。"""
     try:
         page_html = _request_text(result.url, settings.web_search_timeout)
     except (HTTPError, URLError, TimeoutError, ValueError):
@@ -322,7 +339,7 @@ def _fetch_page_text(result: SearchResult, settings: Settings) -> SearchResult:
 
 
 def search_web(query: str, settings: Settings) -> list[SearchResult]:
-    """Search the web and return a small list of text results."""
+    """执行联网搜索，并返回去重后的文本结果列表。"""
 
     provider = settings.web_search_provider
     if provider not in {"auto", "baidu", "sogou", "bing", "duckduckgo"}:
@@ -374,7 +391,7 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
 
 
 def format_search_context(results: list[SearchResult]) -> str:
-    """Format search results for the model prompt."""
+    """把搜索结果整理成可直接喂给模型的上下文字符串。"""
 
     if not results:
         return "联网搜索没有返回可用结果。"

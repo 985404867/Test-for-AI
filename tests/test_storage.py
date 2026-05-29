@@ -5,6 +5,7 @@ from langchain_starter.storage import ConversationStore
 
 
 def test_conversation_store_soft_delete_restore_and_rename() -> None:
+    """验证会话存储的改名、软删除、恢复和永久删除流程。"""
     store = ConversationStore(Path(mkdtemp()) / "conversations.sqlite3")
     session_id = store.create_session("初始标题")
     store.add_message(session_id, "user", "你好")

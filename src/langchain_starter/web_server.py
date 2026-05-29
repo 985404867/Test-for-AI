@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 def _messages_from_payload(items: list[dict]) -> list[BaseMessage]:
+    """把前端发送的历史消息转换为 LangChain 消息对象。"""
     messages: list[BaseMessage] = []
     for item in items:
         role = str(item.get("role", "")).strip()
@@ -41,10 +42,12 @@ def _messages_from_payload(items: list[dict]) -> list[BaseMessage]:
 
 
 def _json_line(payload: dict) -> bytes:
+    """把事件对象编码成 NDJSON 单行，供前端流式消费。"""
     return (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
 
 
 def _is_port_free(host: str, port: int) -> bool:
+    """检查指定端口是否可绑定。"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -55,6 +58,7 @@ def _is_port_free(host: str, port: int) -> bool:
 
 
 def _choose_port(host: str, preferred_port: int) -> int:
+    """从首选端口开始向后探测可用端口。"""
     for port in range(preferred_port, preferred_port + 30):
         if _is_port_free(host, port):
             return port
@@ -62,15 +66,18 @@ def _choose_port(host: str, preferred_port: int) -> int:
 
 
 def create_handler(settings: Settings):
+    """创建处理静态资源和聊天 API 的 HTTP handler 类。"""
     store = ConversationStore()
 
     class WebHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
+            """禁用默认访问日志，避免控制台输出过于嘈杂。"""
             return
 
         def _send_static(self, path: str) -> None:
+            """按请求路径返回前端静态资源。"""
             if path == "/":
                 path = "/index.html"
 
@@ -97,6 +104,7 @@ def create_handler(settings: Settings):
             self.wfile.write(content)
 
         def _send_json(self, payload: dict, status: int = 200) -> None:
+            """以 JSON 格式返回 API 响应。"""
             content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -105,6 +113,7 @@ def create_handler(settings: Settings):
             self.wfile.write(content)
 
         def do_GET(self) -> None:
+            """处理配置、会话列表、会话消息和静态资源的 GET 请求。"""
             parsed = urlparse(self.path)
             if parsed.path == "/api/config":
                 payload = {
@@ -141,6 +150,7 @@ def create_handler(settings: Settings):
             self._send_static(parsed.path)
 
         def do_DELETE(self) -> None:
+            """处理会话删除请求，支持软删除和永久删除。"""
             parsed = urlparse(self.path)
             if parsed.path != "/api/session":
                 self.send_error(404)
@@ -163,6 +173,7 @@ def create_handler(settings: Settings):
             self._send_json({"deleted": deleted, "purged": purge})
 
         def do_PATCH(self) -> None:
+            """处理会话重命名和恢复请求。"""
             parsed = urlparse(self.path)
             if parsed.path != "/api/session":
                 self.send_error(404)
@@ -199,6 +210,7 @@ def create_handler(settings: Settings):
             self._send_json({"renamed": ok, "title": title})
 
         def do_POST(self) -> None:
+            """处理聊天请求，并以 NDJSON 流式返回结果。"""
             parsed = urlparse(self.path)
             if parsed.path != "/api/chat":
                 self.send_error(404)
@@ -309,7 +321,7 @@ def create_handler(settings: Settings):
 
 
 def run_web_app(settings: Settings, host: str = "127.0.0.1", port: int = 8000) -> None:
-    """Run the local React web UI."""
+    """启动本地 React Web 服务。"""
 
     selected_port = _choose_port(host, port)
     server = ThreadingHTTPServer((host, selected_port), create_handler(settings))

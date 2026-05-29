@@ -11,6 +11,7 @@ from langchain_starter.storage import ConversationStore
 
 
 def _settings() -> Settings:
+    """构造 Web API 测试所需的最小 Settings。"""
     return Settings(
         openai_api_key="test-key",
         openai_model="gpt-4.1-mini",
@@ -33,11 +34,14 @@ def _settings() -> Settings:
 
 
 class _DummyHeaders(dict):
+    """提供与 BaseHTTPRequestHandler 类似的 headers 访问方式。"""
+
     def get(self, key, default=None):  # noqa: A003 - match header API
         return super().get(key, default)
 
 
 def _make_handler(handler_class, path: str, *, body: dict | None = None):
+    """创建一个可直接调用 handler 方法的测试实例。"""
     handler = handler_class.__new__(handler_class)
     handler.path = path
     payload = json.dumps(body or {}, ensure_ascii=False).encode("utf-8")
@@ -70,6 +74,7 @@ def _make_handler(handler_class, path: str, *, body: dict | None = None):
 
 @pytest.fixture()
 def handler_factory(monkeypatch):
+    """提供测试用的 handler 类和独立数据库存储。"""
     store = ConversationStore(Path(mkdtemp()) / "conversations.sqlite3")
     monkeypatch.setattr(web_server, "ConversationStore", lambda: store)
     handler_class = web_server.create_handler(_settings())
@@ -77,6 +82,7 @@ def handler_factory(monkeypatch):
 
 
 def _json_body(handler) -> dict:
+    """从测试 handler 的响应缓冲区中解析 JSON。"""
     if handler.response_body is not None:
         return json.loads(handler.response_body.decode("utf-8"))
     body = handler.wfile.getvalue()
@@ -84,6 +90,7 @@ def _json_body(handler) -> dict:
 
 
 def test_session_api_supports_rename_delete_restore(handler_factory) -> None:
+    """验证会话 API 的改名、删除、恢复和搜索行为。"""
     handler_class, store = handler_factory
     session_id = store.create_session("会话一")
     store.add_message(session_id, "user", "hello")

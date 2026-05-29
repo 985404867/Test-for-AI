@@ -32,6 +32,7 @@ ToolEventCallback = Callable[[dict], None]
 
 
 def _message_content_to_text(content: object) -> str:
+    """把 Agent 返回的多种 content 结构统一成纯文本。"""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -49,7 +50,7 @@ def create_tool_calling_agent(
     settings: Settings,
     on_tool_event: ToolEventCallback | None = None,
 ):
-    """Create a LangChain 1.x tool-calling agent graph."""
+    """创建 Tool Calling Agent 图，供 CLI、GUI 和 Web 复用。"""
 
     system_prompt = f"{current_datetime_context()}{AGENT_SYSTEM_PROMPT}"
     return create_agent(
@@ -65,7 +66,7 @@ def ask_agent(
     settings: Settings,
     on_tool_event: ToolEventCallback | None = None,
 ) -> tuple[str, list[BaseMessage]]:
-    """Run the tool-calling agent and return the answer plus updated chat history."""
+    """运行 Agent 并返回答案与更新后的历史记录。"""
 
     try:
         agent = create_tool_calling_agent(settings, on_tool_event=on_tool_event)

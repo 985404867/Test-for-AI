@@ -9,6 +9,7 @@
     },
   ];
 
+  /** 生成消息时间标签，供聊天记录和会话卡片展示。 */
   function nowLabel() {
     return new Date().toLocaleTimeString("zh-CN", {
       hour: "2-digit",
@@ -16,10 +17,12 @@
     });
   }
 
+  /** 拼接多个 CSS 类名，方便根据状态切换样式。 */
   function classNames(...values) {
     return values.filter(Boolean).join(" ");
   }
 
+  /** 格式化会话更新时间，用于历史会话列表显示。 */
   function formatSessionTime(value) {
     if (!value) return "";
     const date = new Date(`${value.replace(" ", "T")}Z`);
@@ -30,6 +33,7 @@
     });
   }
 
+  /** 从本地存储读取或创建浏览器会话 ID。 */
   function getOrCreateSessionId() {
     const key = "langchain-starter-session-id";
     let sessionId = localStorage.getItem(key);
@@ -40,6 +44,7 @@
     return sessionId;
   }
 
+  /** 主应用组件，负责会话管理、消息渲染和发送流程。 */
   function App() {
     const [config, setConfig] = useState({
       model: "loading",
@@ -102,6 +107,7 @@
         .catch(() => setStatus("配置读取失败"));
     }, []);
 
+    /** 拉取未删除会话列表，用于侧边栏展示。 */
     async function refreshSessions() {
       try {
         const response = await fetch("/api/sessions");
@@ -112,6 +118,7 @@
       }
     }
 
+    /** 拉取回收站会话列表，供恢复和永久删除使用。 */
     async function refreshDeletedSessions() {
       try {
         const response = await fetch("/api/sessions?deleted=1");
@@ -122,6 +129,7 @@
       }
     }
 
+    /** 读取指定会话消息并恢复到当前聊天窗口。 */
     async function loadSession(nextSessionId) {
       localStorage.setItem(sessionStorageKey, nextSessionId);
       setSessionId(nextSessionId);
@@ -178,12 +186,14 @@
     const currentSessionTitle =
       sessionsForList.find((session) => session.id === sessionId)?.title || "新会话";
 
+    /** 复制单条文本到系统剪贴板。 */
     async function copyText(text) {
       await navigator.clipboard.writeText(text);
       setStatus("已复制");
       window.setTimeout(() => setStatus("就绪"), 1200);
     }
 
+    /** 复制当前会话的完整聊天记录。 */
     async function copyAll() {
       const transcript = messages
         .map((message) => {
@@ -201,6 +211,7 @@
       await copyText(transcript);
     }
 
+    /** 重命名当前或历史会话。 */
     async function renameSession(targetSession) {
       if (!targetSession?.id || isThinking) return;
       const currentTitle = targetSession.title || "新会话";
@@ -226,6 +237,7 @@
       }
     }
 
+    /** 新建一个空会话并切换过去。 */
     function startNewSession() {
       const nextSessionId = crypto.randomUUID();
       localStorage.setItem(sessionStorageKey, nextSessionId);
@@ -236,11 +248,13 @@
       inputRef.current?.focus();
     }
 
+    /** 切换到指定历史会话。 */
     function switchSession(nextSessionId) {
       if (!nextSessionId || nextSessionId === sessionId || isThinking) return;
       loadSession(nextSessionId);
     }
 
+    /** 将会话移动到回收站。 */
     async function deleteSession(targetSession) {
       if (!targetSession?.id || isThinking) return;
       const title = targetSession.title || "新会话";
@@ -284,6 +298,7 @@
       }
     }
 
+    /** 从回收站恢复会话。 */
     async function restoreSession(targetSession) {
       if (!targetSession?.id || isThinking) return;
       try {
@@ -306,6 +321,7 @@
       }
     }
 
+    /** 永久删除回收站中的会话。 */
     async function purgeSession(targetSession) {
       if (!targetSession?.id || isThinking) return;
       const title = targetSession.title || "新会话";
@@ -326,16 +342,19 @@
       }
     }
 
+    /** 切换到 Agent 模式，并关闭联网搜索。 */
     function activateAgentMode() {
       setAgentMode(true);
       setWebSearch(false);
     }
 
+    /** 切换到联网搜索模式，并关闭 Agent。 */
     function activateWebSearchMode() {
       setWebSearch(true);
       setAgentMode(false);
     }
 
+    /** 发送消息并处理流式返回、工具调用和错误。 */
     async function sendMessage() {
       const question = input.trim();
       if (!question || isThinking) return;
@@ -454,6 +473,7 @@
       }
     }
 
+    /** 处理输入框回车发送和 Shift+Enter 换行。 */
     function handleKeyDown(event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -688,6 +708,7 @@
     );
   }
 
+  /** 单条消息气泡，统一渲染用户、AI、系统和工具结果。 */
   function MessageBubble({ message, onCopy }) {
     const label =
       message.role === "user"

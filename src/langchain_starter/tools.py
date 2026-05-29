@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def _preview_text(value: str, limit: int = 700) -> str:
+    """截断工具结果，方便在日志和界面里预览。"""
     value = value.strip()
     if len(value) <= limit:
         return value
@@ -27,14 +28,15 @@ def create_agent_tools(
     settings: Settings,
     on_tool_event: ToolEventCallback | None = None,
 ) -> list[StructuredTool]:
-    """Create tools bound to the current runtime settings."""
+    """创建当前运行配置下可供 Agent 调用的工具集合。"""
 
     def emit(payload: dict) -> None:
+        """把工具状态变化回调给前端或日志层。"""
         if on_tool_event is not None:
             on_tool_event(payload)
 
     def web_search(query: str) -> str:
-        """Search the web for current or external information."""
+        """联网搜索当前信息、外部资料或网页内容。"""
 
         started_at = time.perf_counter()
         logger.info("Tool web_search start query=%r", query)
@@ -73,7 +75,7 @@ def create_agent_tools(
         return content
 
     def local_knowledge_search(query: str) -> str:
-        """Search the local knowledge base stored in data/knowledge.md."""
+        """检索项目本地知识库，用于回答仓库内部问题。"""
 
         started_at = time.perf_counter()
         logger.info("Tool local_knowledge_search start query=%r", query)

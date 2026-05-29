@@ -7,7 +7,10 @@ from pathlib import Path
 
 
 def setup_logging(log_path: Path = Path("data/logs/app.log")) -> None:
-    """Configure file and console logging once."""
+    """初始化文件日志和控制台日志。
+
+    场景：CLI、GUI 和 Web 服务启动时调用，统一把运行信息写入文件并输出到终端。
+    """
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     root_logger = logging.getLogger()

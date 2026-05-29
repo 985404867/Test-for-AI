@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 class Settings:
     """项目运行配置。
 
-    frozen=True 表示创建后不再修改，避免运行中某个地方悄悄改配置。
+    用来集中保存模型、RAG、联网搜索和持久化相关参数，避免业务代码直接读环境变量。
     """
 
     openai_api_key: str
@@ -51,7 +51,7 @@ class Settings:
 
 
 def _optional_text(value: str | None) -> str | None:
-    """把空字符串转成 None，方便传给 LangChain/OpenAI 客户端。"""
+    """把空字符串统一转成 None，便于传给兼容接口或可选参数。"""
 
     if value is None or value.strip() == "":
         return None
@@ -59,7 +59,7 @@ def _optional_text(value: str | None) -> str | None:
 
 
 def _optional_bool(value: str | None, default: bool = False) -> bool:
-    """读取布尔环境变量，支持 true/false、1/0、yes/no。"""
+    """解析布尔环境变量，支持 true/false、1/0、yes/no 等常见写法。"""
 
     if value is None or value.strip() == "":
         return default
@@ -67,7 +67,7 @@ def _optional_bool(value: str | None, default: bool = False) -> bool:
 
 
 def _optional_int(value: str | None) -> int | None:
-    """把空字符串转成 None，否则读取整数。"""
+    """把空字符串转成 None，否则转换为整数值。"""
 
     if value is None or value.strip() == "":
         return None
@@ -75,10 +75,9 @@ def _optional_int(value: str | None) -> int | None:
 
 
 def load_settings() -> Settings:
-    """从 .env 和系统环境变量中加载配置。
+    """从 `.env` 和系统环境变量中加载项目配置。
 
-    python-dotenv 会先读取项目根目录的 .env；如果系统环境变量已经存在，
-    系统环境变量优先级更高，适合部署时覆盖本地配置。
+    场景：启动 CLI、GUI、Web 服务或测试时，都通过这个入口获取统一配置。
     """
 
     load_dotenv()

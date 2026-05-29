@@ -31,7 +31,7 @@ META_FILE = CACHE_DIR / "metadata.json"
 
 
 def _format_context(documents: list[Document]) -> str:
-    """把检索到的文档块合并成提示词里的 context 字符串。"""
+    """把检索到的文档块合并成提示词中的上下文字符串。"""
 
     return "\n\n".join(
         f"[来源: {doc.metadata.get('source', 'unknown')}]\n{doc.page_content}"
@@ -40,6 +40,7 @@ def _format_context(documents: list[Document]) -> str:
 
 
 def _knowledge_signature(settings: Settings) -> dict[str, object]:
+    """生成知识库缓存签名，用于判断向量库是否需要重建。"""
     knowledge_path = settings.knowledge_path
     stat = knowledge_path.stat()
     return {
@@ -52,6 +53,7 @@ def _knowledge_signature(settings: Settings) -> dict[str, object]:
 
 
 def _load_cached_vector_store(settings: Settings, embeddings):
+    """按签名读取磁盘缓存的 FAISS 向量库。"""
     if not META_FILE.exists():
         return None
 
@@ -76,6 +78,7 @@ def _load_cached_vector_store(settings: Settings, embeddings):
 
 
 def _save_vector_store(settings: Settings, vector_store: FAISS) -> None:
+    """把构建好的 FAISS 向量库写入磁盘缓存。"""
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         vector_store.save_local(str(CACHE_DIR))
@@ -89,11 +92,7 @@ def _save_vector_store(settings: Settings, vector_store: FAISS) -> None:
 
 
 def build_retriever(settings: Settings):
-    """构建一个内存里的 FAISS 检索器。
-
-    入门项目每次运行都会重新创建向量库，逻辑最直观。
-    如果知识库很大，可以把 FAISS 保存到磁盘，避免每次重新向量化。
-    """
+    """构建 FAISS 检索器，供 RAG 和本地知识检索使用。"""
 
     embeddings = create_embeddings(settings)
     vector_store = _load_cached_vector_store(settings, embeddings)
@@ -108,7 +107,7 @@ def build_retriever(settings: Settings):
 
 
 def retrieve_knowledge_context(question: str, settings: Settings) -> str:
-    """检索本地知识库，返回可直接放进提示词或工具结果的上下文。"""
+    """检索本地知识库，返回可直接注入提示词的上下文。"""
 
     retriever = build_retriever(settings)
     documents = retriever.invoke(question)
@@ -116,7 +115,7 @@ def retrieve_knowledge_context(question: str, settings: Settings) -> str:
 
 
 def ask_with_rag(question: str, settings: Settings) -> str:
-    """执行一次 RAG 问答。"""
+    """执行一次完整的 RAG 问答流程。"""
 
     retriever = build_retriever(settings)
     model = create_chat_model(settings)

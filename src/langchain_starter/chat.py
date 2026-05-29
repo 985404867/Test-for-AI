@@ -30,7 +30,7 @@ CONTINUE_QUESTION = (
 
 
 def _chunk_to_text(content: object) -> str:
-    """Normalize streamed model chunks to plain text."""
+    """把模型流式返回的 chunk 统一转换成纯文本。"""
 
     if isinstance(content, str):
         return content
@@ -46,7 +46,7 @@ def _chunk_to_text(content: object) -> str:
 
 
 def _chunk_finish_reason(chunk: object) -> str | None:
-    """Extract finish_reason from common LangChain/OpenAI chunk shapes."""
+    """从常见的 LangChain/OpenAI chunk 结构中提取结束原因。"""
 
     response_metadata = getattr(chunk, "response_metadata", None) or {}
     finish_reason = response_metadata.get("finish_reason")
@@ -62,7 +62,7 @@ def _chunk_finish_reason(chunk: object) -> str | None:
 
 
 def ask_chat(question: str, settings: Settings) -> str:
-    """调用普通聊天链并返回字符串答案。"""
+    """调用普通聊天链并返回完整字符串答案。"""
 
     model = create_chat_model(settings)
     chain = BASIC_CHAT_PROMPT | model
@@ -78,7 +78,7 @@ def ask_chat(question: str, settings: Settings) -> str:
 def ask_conversation(
     question: str, history: list[BaseMessage], settings: Settings
 ) -> tuple[str, list[BaseMessage]]:
-    """调用带上下文的聊天链，并返回答案和更新后的历史。"""
+    """调用带历史上下文的聊天链，并返回答案和更新后的会话历史。"""
 
     answer = "".join(stream_conversation(question, history, settings))
     updated_history = [*history, HumanMessage(content=question), AIMessage(content=answer)]
@@ -93,7 +93,10 @@ def _stream_with_auto_continue(
     settings: Settings,
     extra_inputs: dict[str, str] | None = None,
 ) -> Iterator[str]:
-    """Stream once, then continue automatically if the provider reports truncation."""
+    """先流式输出一次，如被截断则自动续写。
+
+    场景：服务商单次输出上限不足时，尽量拼出完整回答。
+    """
 
     current_history = list(history)
     current_question = question
@@ -136,7 +139,7 @@ def _stream_with_auto_continue(
 def stream_conversation(
     question: str, history: list[BaseMessage], settings: Settings
 ) -> Iterator[str]:
-    """Stream a conversation answer chunk by chunk."""
+    """按 chunk 流式输出普通对话结果。"""
 
     yield from _stream_with_auto_continue(
         prompt=CONVERSATION_PROMPT,
@@ -149,7 +152,7 @@ def stream_conversation(
 def ask_conversation_with_search(
     question: str, history: list[BaseMessage], settings: Settings
 ) -> tuple[str, list[BaseMessage], str]:
-    """Search the web first, then answer with conversation history and sources."""
+    """先联网搜索，再结合历史上下文生成回答。"""
 
     search_results = search_web(question, settings)
     web_search_context = format_search_context(search_results)
@@ -167,7 +170,7 @@ def ask_conversation_with_search(
 
 
 def prepare_web_search_context(question: str, settings: Settings) -> str:
-    """Run web search and format its results for the prompt."""
+    """执行联网搜索并整理成可注入提示词的上下文。"""
 
     search_results = search_web(question, settings)
     return format_search_context(search_results)
@@ -179,7 +182,7 @@ def stream_conversation_with_search_context(
     web_search_context: str,
     settings: Settings,
 ) -> Iterator[str]:
-    """Stream an answer using previously prepared web search context."""
+    """基于已准备好的联网搜索上下文流式输出回答。"""
 
     yield from _stream_with_auto_continue(
         prompt=WEB_SEARCH_PROMPT,

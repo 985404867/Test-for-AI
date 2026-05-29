@@ -18,9 +18,10 @@ from langchain_starter.storage import ConversationStore
 
 
 class ChatWindow:
-    """A polished desktop chat UI for continuous conversations."""
+    """桌面聊天窗口，负责渲染消息、滚动、复制和发送。"""
 
     def __init__(self, root: tk.Tk, settings: Settings) -> None:
+        """初始化桌面窗口、恢复会话并搭建主要 UI。"""
         self.root = root
         self.settings = settings
         self.store = ConversationStore()
@@ -46,7 +47,7 @@ class ChatWindow:
         self.root.bind_all("<Control-c>", self.copy_selected_text)
 
     def _bring_to_front(self) -> None:
-        """Bring the window to the front on launch without keeping it pinned."""
+        """启动时把窗口提到最前面，便于用户立即看到聊天界面。"""
 
         self.root.lift()
         self.root.attributes("-topmost", True)
@@ -54,6 +55,7 @@ class ChatWindow:
         self.root.after(1200, lambda: self.root.attributes("-topmost", False))
 
     def _configure_style(self) -> None:
+        """配置整体视觉样式，统一字体、颜色和按钮外观。"""
         style = ttk.Style()
         if "aqua" in style.theme_names():
             style.theme_use("aqua")
@@ -104,6 +106,7 @@ class ChatWindow:
         style.configure("Ghost.TButton", font=self.small_font, padding=(12, 7))
 
     def _build_widgets(self) -> None:
+        """构建标题栏、消息区、输入区和操作按钮。"""
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
 
@@ -229,6 +232,7 @@ class ChatWindow:
         self.input_text.focus_set()
 
     def _load_persisted_messages(self) -> None:
+        """从 SQLite 恢复最近会话的聊天记录。"""
         messages = self.store.get_messages(self.session_id)
         if not messages:
             self._append_message(
@@ -254,17 +258,21 @@ class ChatWindow:
         self.status_label.configure(text="已恢复历史")
 
     def _update_scroll_region(self, _event: tk.Event) -> None:
+        """在消息内容变化后刷新画布滚动范围。"""
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
     def _resize_messages_frame(self, event: tk.Event) -> None:
+        """在窗口宽度变化时同步调整消息容器宽度。"""
         self.canvas.itemconfigure(self.messages_window, width=event.width)
 
     def _bind_history_scroll(self, widget: tk.Widget) -> None:
+        """给消息区域绑定鼠标和触摸板滚动事件。"""
         widget.bind("<MouseWheel>", self._on_mousewheel, add="+")
         widget.bind("<Button-4>", self._on_scroll_up, add="+")
         widget.bind("<Button-5>", self._on_scroll_down, add="+")
 
     def _scroll_history_pixels(self, pixels: float) -> str:
+        """按像素滚动消息历史，提升滚动手感。"""
         bbox = self.canvas.bbox("all")
         if not bbox:
             return "break"
@@ -282,6 +290,7 @@ class ChatWindow:
         return "break"
 
     def _on_mousewheel(self, event: tk.Event) -> None:
+        """处理鼠标滚轮或触摸板滚动事件。"""
         if event.delta == 0:
             return "break"
 
@@ -297,23 +306,29 @@ class ChatWindow:
         return self._scroll_history_pixels(whole_pixels)
 
     def _on_scroll_up(self, _event: tk.Event) -> str:
+        """兼容 Linux/部分环境的向上滚动事件。"""
         return self._scroll_history_pixels(-72)
 
     def _on_scroll_down(self, _event: tk.Event) -> str:
+        """兼容 Linux/部分环境的向下滚动事件。"""
         return self._scroll_history_pixels(72)
 
     def _scroll_to_bottom(self) -> None:
+        """将消息区域自动滚到底部，方便查看最新回复。"""
         self.root.after(10, lambda: self.canvas.yview_moveto(1.0))
 
     def _copy_to_clipboard(self, text: str) -> None:
+        """把文本写入系统剪贴板，并提示复制成功。"""
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
         self.status_label.configure(text="已复制")
 
     def _copy_text_widget(self, widget: tk.Text) -> None:
+        """复制单个消息气泡里的文本内容。"""
         self._copy_to_clipboard(widget.get("1.0", "end-1c"))
 
     def copy_selected_text(self, _event: tk.Event | None = None) -> str | None:
+        """复制当前选中的文本，便于快捷键操作。"""
         widget = self.root.focus_get()
         if not isinstance(widget, tk.Text):
             return None
@@ -327,6 +342,7 @@ class ChatWindow:
         return "break"
 
     def copy_all_messages(self) -> None:
+        """复制当前会话的完整聊天记录。"""
         if not self.transcript:
             return
 
@@ -336,10 +352,12 @@ class ChatWindow:
         self._copy_to_clipboard(text)
 
     def _send_on_return(self, _event: tk.Event) -> str:
+        """按回车键发送消息。"""
         self.send_message()
         return "break"
 
     def _insert_newline(self, _event: tk.Event) -> None:
+        """按 Shift+Enter 在输入框中插入换行。"""
         self.input_text.insert(tk.INSERT, "\n")
 
     def _insert_message_bubble(
@@ -352,6 +370,7 @@ class ChatWindow:
         text_fg: str,
         label_fg: str,
     ) -> tk.Text:
+        """创建一条消息气泡，用于用户、AI、系统或工具输出。"""
         row = ttk.Frame(self.messages_frame, style="Chat.TFrame")
         row.grid(row=self.message_count, column=0, sticky="ew", pady=6)
         row.columnconfigure(0, weight=1)
@@ -435,6 +454,7 @@ class ChatWindow:
         *,
         record: bool = True,
     ) -> tk.Text:
+        """把一条消息追加到聊天记录中，并滚动到最新位置。"""
         if record:
             self.transcript.append((speaker, content))
         if speaker == "你":
@@ -468,6 +488,7 @@ class ChatWindow:
         return text_widget
 
     def _append_stream_chunk(self, widget: tk.Text, chunk: str) -> None:
+        """把流式输出追加到正在生成的 AI 消息里。"""
         widget.configure(state=tk.NORMAL)
         if getattr(widget, "_is_pending_answer", False):
             widget.delete("1.0", tk.END)
@@ -482,6 +503,7 @@ class ChatWindow:
         self._scroll_to_bottom()
 
     def _set_waiting(self, waiting: bool) -> None:
+        """切换发送中状态，并同步按钮和状态栏。"""
         self.is_waiting = waiting
         self.send_button.configure(text="思考中..." if waiting else "发送")
         self.send_button.configure(state=tk.DISABLED if waiting else tk.NORMAL)
@@ -489,6 +511,7 @@ class ChatWindow:
         self.status_label.configure(text=status)
 
     def start_new_session(self) -> None:
+        """创建新的本地会话，开始一段全新的对话。"""
         if self.is_waiting:
             return
 
@@ -502,6 +525,7 @@ class ChatWindow:
         self.status_label.configure(text="新对话")
 
     def send_message(self) -> None:
+        """读取输入框内容并异步请求模型回复。"""
         if self.is_waiting:
             return
 
@@ -531,6 +555,7 @@ class ChatWindow:
         history: list[BaseMessage],
         use_web_search: bool,
     ) -> None:
+        """在线程中调用模型并把流式结果回传到 UI。"""
         answer_chunks: list[str] = []
         search_context = ""
         stream_ready = threading.Event()
@@ -580,6 +605,7 @@ class ChatWindow:
         answer: str,
         updated_history: list[BaseMessage],
     ) -> None:
+        """在流式输出结束后，提交历史记录并恢复可交互状态。"""
         self.history = updated_history
         self.transcript.append(("AI", answer))
         self.store.add_message(
@@ -591,13 +617,14 @@ class ChatWindow:
         self._set_waiting(False)
 
     def _show_error(self, exc: Exception) -> None:
+        """把请求失败信息展示给用户。"""
         self._set_waiting(False)
         messagebox.showerror("调用失败", str(exc))
         self._append_message("系统", f"调用失败：{exc}")
 
 
 def run_chat_window(settings: Settings) -> None:
-    """Open the desktop chat window."""
+    """打开桌面聊天窗口。"""
 
     root = tk.Tk()
     ChatWindow(root, settings)

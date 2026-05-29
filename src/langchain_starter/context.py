@@ -19,8 +19,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 def load_knowledge_file(path: Path) -> list[Document]:
     """读取 Markdown 知识库文件，并包装成 LangChain Document。
 
-    Document 的 metadata 可以放来源、标题、作者等信息。
-    这里放 source，方便回答时知道内容来自哪个文件。
+    场景：RAG 构建向量索引前，先把本地文档转成标准文档对象。
     """
 
     if not path.exists():
@@ -33,8 +32,7 @@ def load_knowledge_file(path: Path) -> list[Document]:
 def split_documents(documents: list[Document]) -> list[Document]:
     """把长文档切分成适合检索的小块。
 
-    chunk_size 越大，上下文更完整，但检索不够精细；
-    chunk_size 越小，检索更精细，但可能丢失上下文。
+    场景：知识库索引、RAG 检索、长文档分段召回。
     """
 
     splitter = RecursiveCharacterTextSplitter(
@@ -43,4 +41,3 @@ def split_documents(documents: list[Document]) -> list[Document]:
         separators=["\n## ", "\n### ", "\n\n", "\n", "。", "，", " "],
     )
     return splitter.split_documents(documents)
-

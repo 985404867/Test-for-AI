@@ -10,7 +10,7 @@ LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 def current_datetime_context() -> str:
-    """Return the current local date/time context for prompts."""
+    """生成当前日期时间上下文，供提示词和 Agent 参考。"""
 
     now = datetime.now(LOCAL_TIMEZONE)
     return (

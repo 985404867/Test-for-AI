@@ -4,6 +4,7 @@ from langchain_starter.config import Settings
 
 
 def test_settings_can_be_constructed() -> None:
+    """验证 Settings 可以在测试环境中正常构造。"""
     settings = Settings(
         openai_api_key="test-key",
         openai_model="gpt-4.1-mini",

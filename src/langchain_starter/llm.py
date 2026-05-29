@@ -16,16 +16,17 @@ from langchain_starter.config import Settings
 
 
 class LocalHashEmbeddings(Embeddings):
-    """Small deterministic embedding model for local RAG demos.
+    """本地哈希向量模型。
 
-    It is not a semantic embedding model, but it keeps the starter project runnable
-    when the selected chat provider does not expose an embeddings endpoint.
+    场景：当兼容接口没有 embeddings 能力时，仍然可以让 RAG 跑起来。
     """
 
     def __init__(self, dimensions: int = 384) -> None:
+        """初始化向量维度，便于在本地生成固定长度的可检索表示。"""
         self.dimensions = dimensions
 
     def _embed(self, text: str) -> list[float]:
+        """把单段文本编码成归一化向量，供本地 FAISS 检索使用。"""
         vector = [0.0] * self.dimensions
         tokens = [token for token in text.lower().split() if token.strip()]
         if not tokens:
@@ -41,18 +42,18 @@ class LocalHashEmbeddings(Embeddings):
         return [value / norm for value in vector]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """批量编码文档文本，供知识库建索引时调用。"""
         return [self._embed(text) for text in texts]
 
     def embed_query(self, text: str) -> list[float]:
+        """编码查询文本，供检索时与文档向量做相似度匹配。"""
         return self._embed(text)
 
 
 def create_chat_model(settings: Settings) -> ChatOpenAI:
     """创建聊天模型。
 
-    base_url 是可选项：
-    - None：使用官方 OpenAI API
-    - 有值：使用 OpenAI 兼容接口，比如代理、自建网关或第三方兼容服务
+    场景：CLI、GUI、Web、Agent 和 RAG 都通过这里拿到统一的对话模型实例。
     """
 
     return ChatOpenAI(
@@ -65,10 +66,9 @@ def create_chat_model(settings: Settings) -> ChatOpenAI:
 
 
 def create_embeddings(settings: Settings) -> Embeddings:
-    """创建向量模型，用于把文本转成向量，供 FAISS 检索。
+    """创建向量模型，供 RAG 构建索引和查询召回使用。
 
-    默认使用本地 hash embedding，保证 DeepSeek 等只提供聊天模型的兼容接口
-    也能跑通 RAG 示例。需要真实语义检索时，把 EMBEDDING_PROVIDER 改成 openai。
+    场景：知识库向量化、缓存重建、检索问题上下文。
     """
 
     if settings.embedding_provider == "local":
