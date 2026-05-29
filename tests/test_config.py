@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from langchain_starter.config import Settings
+import pytest
+
+from langchain_starter.config import Settings, load_settings
 
 
 def test_settings_can_be_constructed() -> None:
@@ -27,3 +29,21 @@ def test_settings_can_be_constructed() -> None:
 
     assert settings.openai_model == "gpt-4.1-mini"
     assert settings.retriever_k == 4
+
+
+def test_load_settings_reports_invalid_integer_env(monkeypatch) -> None:
+    """整数配置写错时应该提示具体环境变量名。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("RETRIEVER_K", "many")
+
+    with pytest.raises(RuntimeError, match="RETRIEVER_K 必须是整数"):
+        load_settings()
+
+
+def test_load_settings_reports_invalid_boolean_env(monkeypatch) -> None:
+    """布尔配置写错时应该提示具体环境变量名和可用格式。"""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("WEB_SEARCH_ENABLED", "maybe")
+
+    with pytest.raises(RuntimeError, match="WEB_SEARCH_ENABLED 必须是布尔值"):
+        load_settings()

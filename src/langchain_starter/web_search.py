@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
@@ -115,23 +116,28 @@ def _decode_baidu_url(url: str) -> str:
 
 def _extract_baidu_results(page_html: str) -> list[SearchResult]:
     """从百度搜索页面中提取结果。"""
+    # 百度触发安全验证时页面里不会有可用搜索结果，直接返回空列表让上层切换搜索源。
     if "百度安全验证" in page_html or "wappass.baidu.com" in page_html:
         return []
 
     results: list[SearchResult] = []
+    # 优先匹配百度常见的结果卡片容器；这类块通常同时包含标题、摘要和跳转链接。
     blocks = re.findall(
         r'<div[^>]+(?:class="[^"]*\bresult\b[^"]*"|tpl="[^"]+")[\s\S]*?</div>\s*</div>',
         page_html,
         flags=re.IGNORECASE,
     )
     if not blocks:
+        # 搜索页结构经常调整；退回到 h3 标题块扫描。
+        # \Z 用于覆盖测试片段或页面尾部没有 </body> 的情况，避免漏掉最后一条结果。
         blocks = re.findall(
-            r'<h3[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="page"|</body>)',
+            r'<h3[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="page"|</body>|\Z)',
             page_html,
             flags=re.IGNORECASE,
         )
 
     for block in blocks:
+        # 标准结构是 h3 > a；如果页面简化，就退回到块里的第一个链接。
         title_match = re.search(
             r'<h3[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>[\s\S]*?</h3>',
             block,
@@ -148,6 +154,7 @@ def _extract_baidu_results(page_html: str) -> list[SearchResult]:
 
         url = _decode_baidu_url(title_match.group(1))
         title = _clean_text(title_match.group(2))
+        # 摘要从标题以外的剩余 HTML 中提取，并限制长度，避免把整块页面塞进 prompt。
         snippet = _clean_text(re.sub(r"<h3[\s\S]*?</h3>", " ", block, flags=re.IGNORECASE))
         if len(snippet) > 260:
             snippet = snippet[:260].rstrip() + "..."
@@ -170,14 +177,16 @@ def _search_baidu_html(query: str, settings: Settings) -> list[SearchResult]:
 def _extract_sogou_results(page_html: str) -> list[SearchResult]:
     """从搜狗搜索页面中提取结果。"""
     results: list[SearchResult] = []
+    # 搜狗不同版本会使用 vrwrap/results/rb 等容器名，先按这些常见卡片切块。
     blocks = re.findall(
         r'<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"[\s\S]*?(?=<div[^>]+class="[^"]*(?:vrwrap|results|rb)[^"]*"|<div id="pagebar_container"|</body>)',
         page_html,
         flags=re.IGNORECASE,
     )
     if not blocks:
+        # 容器名失效时，退回到 h3 标题块；\Z 保证最后一条结果也能被匹配到。
         blocks = re.findall(
-            r'<h3[^>]*>[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="pagebar_container"|</body>)',
+            r'<h3[^>]*>[\s\S]*?</h3>[\s\S]*?(?=<h3|<div id="pagebar_container"|</body>|\Z)',
             page_html,
             flags=re.IGNORECASE,
         )
@@ -197,6 +206,7 @@ def _extract_sogou_results(page_html: str) -> list[SearchResult]:
         if not title_match:
             continue
 
+        # 搜狗结果可能给协议相对 URL 或站内相对 URL，这里统一补成绝对地址。
         url = html.unescape(title_match.group(1))
         if url.startswith("//"):
             url = f"https:{url}"
@@ -204,6 +214,7 @@ def _extract_sogou_results(page_html: str) -> list[SearchResult]:
             url = urljoin("https://www.sogou.com", url)
 
         title = _clean_text(title_match.group(2))
+        # 摘要只取标题之外的正文内容，并做长度保护，降低 prompt 噪音。
         snippet_source = re.sub(r"<h3[\s\S]*?</h3>", " ", block, flags=re.IGNORECASE)
         snippet = _clean_text(snippet_source)
         if len(snippet) > 300:
@@ -377,6 +388,7 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
     deduped: list[SearchResult] = []
     seen_urls: set[str] = set()
     for result in results:
+        # 搜索引擎经常返回重复跳转链接，按 URL 去重后再限制结果数量。
         if result.url in seen_urls:
             continue
         seen_urls.add(result.url)
@@ -385,7 +397,11 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
             break
 
     if settings.web_search_fetch_pages:
-        deduped = [_fetch_page_text(result, settings) for result in deduped]
+        # 正文抓取是网络 I/O，串行会明显拖慢回答；最多 5 路并发，避免压垮本机或目标网站。
+        # executor.map 会保持输入顺序，因此 UI 和 prompt 里的结果顺序仍与搜索结果一致。
+        max_workers = max(1, min(len(deduped), settings.web_search_max_results, 5))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            deduped = list(executor.map(lambda result: _fetch_page_text(result, settings), deduped))
 
     return deduped
 
