@@ -3,6 +3,7 @@ from pathlib import Path
 from langchain_starter.config import Settings
 from langchain_starter.web_search import (
     SearchResult,
+    _build_time_aware_query,
     _extract_baidu_results,
     _extract_bing_results,
     _extract_duckduckgo_html_results,
@@ -110,6 +111,35 @@ def test_search_web_deduplicates_and_limits_results(monkeypatch) -> None:
     assert [result.url for result in results] == [
         "https://example.com/a",
         "https://example.com/b",
+    ]
+
+
+def test_time_aware_query_adds_current_year_without_overriding_explicit_year() -> None:
+    assert _build_time_aware_query("ChinaJoy 现在还有门票吗", 2026) == "ChinaJoy 现在还有门票吗 2026 最新"
+    assert _build_time_aware_query("2025 ChinaJoy 门票", 2026) == "2025 ChinaJoy 门票"
+
+
+def test_search_web_prioritizes_current_year_results_for_current_questions(monkeypatch) -> None:
+    settings = _settings()
+    received_queries: list[str] = []
+
+    def fake_bing(query: str, settings: Settings) -> list[SearchResult]:
+        received_queries.append(query)
+        return [
+            SearchResult("2025 活动信息", "2025 年旧页面", "https://example.com/old"),
+            SearchResult("无日期公告", "未注明年份", "https://example.com/neutral"),
+            SearchResult("2026 官方公告", "2026 年当前页面", "https://example.com/current"),
+        ]
+
+    monkeypatch.setattr("langchain_starter.web_search._current_year", lambda: 2026)
+    monkeypatch.setattr("langchain_starter.web_search._search_bing_html", fake_bing)
+
+    results = search_web("ChinaJoy 现在还有门票吗", settings)
+
+    assert received_queries == ["ChinaJoy 现在还有门票吗 2026 最新"]
+    assert [result.url for result in results] == [
+        "https://example.com/current",
+        "https://example.com/neutral",
     ]
 
 

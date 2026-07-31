@@ -258,14 +258,13 @@ def create_handler(settings: Settings):
                         _json_line({"type": "status", "content": "Agent 正在规划工具调用..."})
                     )
                     self.wfile.flush()
+                    latest_tool_event: dict | None = None
 
                     def emit_tool_event(event: dict) -> None:
-                        content = (
-                            f"{event.get('phase', '')}: {event.get('tool', '')}\n"
-                            f"输入：{event.get('input', '')}\n"
-                            f"结果：{event.get('error') or event.get('preview') or ''}"
-                        ).strip()
-                        store.add_message(session_id, "tool", content, metadata=event)
+                        nonlocal latest_tool_event
+                        # 界面只保留本轮最后一条工具状态，历史会话也不重复保存多次检索。
+                        if event.get("phase") != "start":
+                            latest_tool_event = event
                         self.wfile.write(_json_line({"type": "tool", **event}))
                         self.wfile.flush()
 
@@ -275,6 +274,18 @@ def create_handler(settings: Settings):
                         settings,
                         on_tool_event=emit_tool_event,
                     )
+                    if latest_tool_event is not None:
+                        content = (
+                            f"{latest_tool_event.get('phase', '')}: {latest_tool_event.get('tool', '')}\n"
+                            f"输入：{latest_tool_event.get('input', '')}\n"
+                            f"结果：{latest_tool_event.get('error') or latest_tool_event.get('preview') or ''}"
+                        ).strip()
+                        store.add_message(
+                            session_id,
+                            "tool",
+                            content,
+                            metadata=latest_tool_event,
+                        )
                     self.wfile.write(_json_line({"type": "chunk", "content": answer}))
                     self.wfile.flush()
                     store.add_message(session_id, "assistant", answer, metadata={"agentMode": True})

@@ -53,6 +53,8 @@ WEB_SEARCH_PROMPT = ChatPromptTemplate.from_messages(
             "请优先基于这些搜索结果回答，不要笼统地说自己不能访问外部网站。"
             "如果 <web_search> 为空或不足以支持结论，请明确说明搜索结果不足。"
             "涉及时效性信息时，请提醒用户搜索结果可能会变化。"
+            "当用户询问现在、当前、今天、最新或是否仍可用时，只能以当前年份或明确标注为当前的来源下结论；"
+            "若结果只有旧年份、年份冲突或没有日期，不得把旧资料表述为当前事实，应说明无法确认并建议查看官方来源。"
             "\n\n<web_search>\n{web_search_context}\n</web_search>",
         ),
         MessagesPlaceholder(variable_name="history"),

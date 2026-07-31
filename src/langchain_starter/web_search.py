@@ -6,12 +6,22 @@ import html
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, unquote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from langchain_starter.config import Settings
+
+
+_CURRENT_INFO_PATTERN = re.compile(
+    r"现在|目前|当前|今天|今日|近期|最近|最新|实时|还有|仍有|今年|this\s+year|today|current|latest|recent",
+    re.IGNORECASE,
+)
+_YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
+_LOCAL_TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -22,6 +32,46 @@ class SearchResult:
     snippet: str
     url: str
     page_text: str = ""
+
+
+def _current_year() -> int:
+    """返回上海时区当前年份，用于时效性检索。"""
+
+    return datetime.now(_LOCAL_TIMEZONE).year
+
+
+def _is_current_info_query(query: str) -> bool:
+    """判断问题是否明确要求当前、最新或实时信息。"""
+
+    return bool(_CURRENT_INFO_PATTERN.search(query))
+
+
+def _build_time_aware_query(query: str, current_year: int) -> str:
+    """为未指定年份的时效性问题补充当前年份和最新检索约束。"""
+
+    if not _is_current_info_query(query) or _YEAR_PATTERN.search(query):
+        return query
+    return f"{query} {current_year} 最新"
+
+
+def _prioritize_current_year_results(
+    results: list[SearchResult], current_year: int
+) -> list[SearchResult]:
+    """把含当前年份的来源排在前面，并将仅含旧年份的来源放到最后。"""
+
+    current_year_text = str(current_year)
+    current_results: list[SearchResult] = []
+    neutral_results: list[SearchResult] = []
+    older_results: list[SearchResult] = []
+    for result in results:
+        evidence = f"{result.title}\n{result.snippet}\n{result.page_text}"
+        if current_year_text in evidence:
+            current_results.append(result)
+        elif _YEAR_PATTERN.search(evidence):
+            older_results.append(result)
+        else:
+            neutral_results.append(result)
+    return [*current_results, *neutral_results, *older_results]
 
 
 def _request_text(url: str, timeout: float) -> str:
@@ -352,6 +402,17 @@ def _fetch_page_text(result: SearchResult, settings: Settings) -> SearchResult:
 def search_web(query: str, settings: Settings) -> list[SearchResult]:
     """执行联网搜索，并返回去重后的文本结果列表。"""
 
+    current_year = _current_year()
+    is_current_info = _is_current_info_query(query)
+    search_query = _build_time_aware_query(query, current_year)
+    candidate_settings = (
+        replace(
+            settings,
+            web_search_max_results=max(settings.web_search_max_results, 10),
+        )
+        if is_current_info
+        else settings
+    )
     provider = settings.web_search_provider
     if provider not in {"auto", "baidu", "sogou", "bing", "duckduckgo"}:
         provider = "auto"
@@ -371,7 +432,7 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
     results: list[SearchResult] = []
     for name, searcher in searchers:
         try:
-            results = searcher(query, settings)
+            results = searcher(search_query, candidate_settings)
         except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
             search_errors.append(f"{name}: {exc}")
             continue
@@ -393,17 +454,20 @@ def search_web(query: str, settings: Settings) -> list[SearchResult]:
             continue
         seen_urls.add(result.url)
         deduped.append(result)
-        if len(deduped) >= settings.web_search_max_results:
+        if len(deduped) >= candidate_settings.web_search_max_results:
             break
 
     if settings.web_search_fetch_pages:
         # 正文抓取是网络 I/O，串行会明显拖慢回答；最多 5 路并发，避免压垮本机或目标网站。
         # executor.map 会保持输入顺序，因此 UI 和 prompt 里的结果顺序仍与搜索结果一致。
-        max_workers = max(1, min(len(deduped), settings.web_search_max_results, 5))
+        max_workers = max(1, min(len(deduped), candidate_settings.web_search_max_results, 5))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             deduped = list(executor.map(lambda result: _fetch_page_text(result, settings), deduped))
 
-    return deduped
+    if is_current_info:
+        deduped = _prioritize_current_year_results(deduped, current_year)
+
+    return deduped[: settings.web_search_max_results]
 
 
 def format_search_context(results: list[SearchResult]) -> str:

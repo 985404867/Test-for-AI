@@ -310,7 +310,7 @@ class ChatWindow:
         return self._scroll_history_pixels(-72)
 
     def _on_scroll_down(self, _event: tk.Event) -> str:
-        """兼容 Linux/部分环境的向下滚动事件。"""
+        """兼容 Linux/部分环向下滚动事件。"""
         return self._scroll_history_pixels(72)
 
     def _scroll_to_bottom(self) -> None:
